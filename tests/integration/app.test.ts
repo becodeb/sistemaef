@@ -29,8 +29,12 @@ describe("acceso", () => {
     expect((await call(a, "GET", "/students")).status).toBe(200);
   });
 
-  it("el administrador crea cuentas y saca el acceso en el momento", async () => {
-    const admin = await newUser("Admin Uno", "admin");
+  it("el admin general crea cuentas de los tres roles y saca el acceso en el momento", async () => {
+    const admin = await newUser("Admin Uno", "superadmin");
+    for (const [firstName, role] of [["Ada", "admin"], ["Gina", "superadmin"], ["Dora", "teacher"]]) {
+      const res = await call(admin, "POST", "/admin/users", { firstName, lastName: "Vega", role });
+      expect(res.body.user.role).toBe(role);
+    }
     const created = await call(admin, "POST", "/admin/users", { firstName: "Leo", lastName: "Luna" });
     expect(created.status).toBe(201);
     expect(created.body.user.username).toBe("Leo Luna");
@@ -50,17 +54,53 @@ describe("acceso", () => {
     expect(denied.body.error.code).toBe("disabled");
   });
 
-  it("un profe no administra, y no se queda el colegio sin administrador", async () => {
+  it("el docente solo carga marcas y ve alumnos, en todos los cursos", async () => {
     const admin = await newUser("Admin Uno", "admin");
     const profe = await newUser("Ana Paz");
-    expect((await call(profe, "GET", "/admin/users")).status).toBe(403);
+    const alto = await disciplineId("Salto en alto");
+    const a = await newStudent(admin, "Ana", "Aguirre", "6ES");
+    const b = await newStudent(admin, "Bruno", "Bianchi", "1EP", "wind", "h");
+
+    // Lo que sí puede
+    expect((await call(profe, "GET", "/students")).body).toHaveLength(2);
+    expect((await call(profe, "GET", `/students/${b}/profile`)).status).toBe(200);
+    expect((await call(profe, "GET", `/roster?disciplineId=${alto}&group=c:1EP`)).status).toBe(200);
+    expect((await save(profe, alto, "2026-04-01", [{ studentId: a, value: 1.2 }])).status).toBe(201);
+    expect((await save(profe, alto, "2026-04-01", [{ studentId: b, value: 1.1 }])).status).toBe(201);
+
+    // Lo que no
+    for (const url of ["/stats/dashboard", `/stats/rankings?disciplineId=${alto}`, "/stats/records", `/stats/progress?disciplineId=${alto}`, "/admin/users", "/admin/disciplines"]) {
+      expect((await call(profe, "GET", url)).status, url).toBe(403);
+    }
     expect((await call(profe, "POST", "/students", { firstName: "A", lastName: "B", course: "1ES", house: "wind", gender: null })).status).toBe(403);
+    expect((await call(profe, "PATCH", `/students/${a}`, { house: "water" })).status).toBe(403);
+    expect((await call(profe, "POST", "/students/import", { rows: [{ line: 1, firstName: "A", lastName: "B", course: "1ES", house: "wind", gender: null }] })).status).toBe(403);
+    expect((await call(profe, "PUT", `/students/${a}/goals/${alto}`, { target: 1.5 })).status).toBe(403);
+    const [mark] = (await call(profe, "GET", "/marks")).body.marks;
+    expect(mark.canDelete).toBe(false);
+    expect((await call(profe, "DELETE", `/marks/${mark.id}`)).status).toBe(403);
+  });
+
+  it("el admin modifica datos y borra cargas, pero no crea usuarios", async () => {
+    const admin = await newUser("Ada Vega", "admin");
+    const a = await newStudent(admin, "Ana", "Aguirre", "6ES", "earth");
+    const moved = await call(admin, "PATCH", `/students/${a}`, { house: "water", course: "5ES" });
+    expect(moved.body).toMatchObject({ house: "water", course: "5ES" });
+    expect((await call(admin, "GET", "/stats/dashboard")).status).toBe(200);
+    expect((await call(admin, "GET", "/admin/disciplines")).status).toBe(200);
+    expect((await call(admin, "GET", "/admin/users")).status).toBe(403);
+    expect((await call(admin, "POST", "/admin/users", { firstName: "X", lastName: "Y" })).status).toBe(403);
+  });
+
+  it("no se puede quedar la plataforma sin admin general", async () => {
+    const admin = await newUser("Admin Uno", "superadmin");
     const me = await call(admin, "GET", "/auth/me");
     expect((await call(admin, "PATCH", `/admin/users/${me.body.id}`, { active: false })).status).toBe(400);
+    expect((await call(admin, "PATCH", `/admin/users/${me.body.id}`, { role: "admin" })).status).toBe(400);
   });
 
   it("resetear la contraseña corta las sesiones y vuelve a pedir el cambio", async () => {
-    const admin = await newUser("Admin Uno", "admin");
+    const admin = await newUser("Admin Uno", "superadmin");
     const profe = await newUser("Ana Paz");
     const list = await call(admin, "GET", "/admin/users");
     const id = list.body.find((u: any) => u.username === "Ana Paz").id;
@@ -139,17 +179,17 @@ describe("marcas", () => {
     expect((await marks()).find((m: any) => m.value === 7.5).isPb).toBe(true);
   });
 
-  it("solo quien cargó la marca o un administrador la borra", async () => {
+  it("borrar una carga es solo de los admins, aunque la haya cargado el docente", async () => {
     const admin = await newUser("Admin Uno", "admin");
     const profe = await newUser("Ana Paz");
-    const otro = await newUser("Leo Luna");
     const alto = await disciplineId("Salto en alto");
     const a = await newStudent(admin, "Ana", "Aguirre");
     await save(profe, alto, "2026-04-01", [{ studentId: a, value: 1.2 }]);
-    const [mark] = (await call(otro, "GET", "/marks")).body.marks;
+    const [mark] = (await call(profe, "GET", "/marks")).body.marks;
     expect(mark.canDelete).toBe(false);
-    expect((await call(otro, "DELETE", `/marks/${mark.id}`)).status).toBe(400);
-    expect((await call(profe, "DELETE", `/marks/${mark.id}`)).status).toBe(200);
+    expect((await call(profe, "DELETE", `/marks/${mark.id}`)).status).toBe(403);
+    expect((await call(admin, "GET", "/marks")).body.marks[0].canDelete).toBe(true);
+    expect((await call(admin, "DELETE", `/marks/${mark.id}`)).status).toBe(200);
   });
 });
 

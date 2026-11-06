@@ -1,4 +1,4 @@
-// Lo mínimo para que la app arranque: las disciplinas del diseño y la primera cuenta de administrador.
+// Lo mínimo para que la app arranque: las disciplinas del diseño y la primera cuenta, de admin general.
 import { count } from "drizzle-orm";
 import { nameKey } from "@shared/domain/names";
 import { db } from "./client";
@@ -31,7 +31,7 @@ export async function ensureAdmin() {
     usernameKey: nameKey(env.ADMIN_USERNAME),
     firstName: env.ADMIN_USERNAME,
     lastName: "",
-    role: "admin",
+    role: "superadmin",
     mustChangePassword: true,
     passwordHash: await hashPassword(env.ADMIN_PASSWORD),
   });

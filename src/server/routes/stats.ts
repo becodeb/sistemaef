@@ -3,6 +3,7 @@ import { and, asc, count, eq, isNotNull, sql } from "drizzle-orm";
 import type { Coverage, Dashboard, DisciplineCards, Evolution, HistoricRecords, Progress, Rankings } from "@shared/contracts";
 import { COURSES, todayAR } from "@shared/domain/school";
 import { isBetter } from "@shared/domain/marks";
+import { requireAdmin } from "../auth";
 import { db } from "../db/client";
 import { disciplines, marks, students } from "../db/schema";
 import { bestByGender, getDiscipline, loadMarks, toDiscipline, toStudent } from "../services/marks";
@@ -21,6 +22,7 @@ const yearParam = (raw?: string) => (raw === "todos" ? undefined : Number(raw) |
 const filters = (q: Record<string, string>) => ({ course: q.course || undefined, house: q.house || undefined, gender: q.gender || undefined });
 
 export const statsRoutes = new Hono<AppEnv>()
+  .use("*", requireAdmin)
   .get("/dashboard", async (c) => {
     const schoolYear = Number(c.req.query("schoolYear")) || currentYear();
     const list = await activeDisciplines();

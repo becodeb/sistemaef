@@ -6,6 +6,7 @@ dist
 coverage
 test-results
 *.log
+.claude/
 # Listas reales de alumnos: son datos de menores y nunca van al repo
 private/
 *.xlsx

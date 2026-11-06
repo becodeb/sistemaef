@@ -6,6 +6,7 @@ import { db } from "@server/db/client";
 import { disciplines, users } from "@server/db/schema";
 import { hashPassword } from "@server/lib/crypto";
 import { nameKey } from "@shared/domain/names";
+import type { Role } from "@shared/domain/roles";
 
 const app = createApp();
 
@@ -29,7 +30,7 @@ export async function call<T = any>(agent: Agent, method: string, url: string, b
   return { status: res.status, body: (text ? JSON.parse(text) : null) as T, headers: res.headers };
 }
 
-export async function newUser(name: string, role: "admin" | "teacher" = "teacher", opts: { mustChange?: boolean; password?: string } = {}) {
+export async function newUser(name: string, role: Role = "teacher", opts: { mustChange?: boolean; password?: string } = {}) {
   const [first, ...rest] = name.split(" ");
   const password = opts.password ?? "contraseña-inicial";
   await db.insert(users).values({ username: name, usernameKey: nameKey(name), firstName: first!, lastName: rest.join(" "), role, mustChangePassword: opts.mustChange ?? false, passwordHash: await hashPassword(password) });

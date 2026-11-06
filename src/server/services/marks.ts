@@ -3,6 +3,7 @@
 import { aliasedTable, and, asc, count, desc, eq, inArray, isNotNull, sql, type SQL } from "drizzle-orm";
 import type { BestByGender, Discipline, MarkRow, NamedBest, RecentPage, SaveResult, Student } from "@shared/contracts";
 import { isBetter, personalBests, rangeError } from "@shared/domain/marks";
+import { isAdmin } from "@shared/domain/roles";
 import { todayAR } from "@shared/domain/school";
 import { db, type Tx } from "../db/client";
 import { disciplines, marks, students, users } from "../db/schema";
@@ -68,10 +69,9 @@ export async function saveMarks(user: SessionUser, body: { batchId: string; disc
   });
 }
 
-export async function deleteMark(user: SessionUser, id: string) {
+export async function deleteMark(id: string) {
   const [row] = await db.select({ mark: marks, discipline: disciplines }).from(marks).innerJoin(disciplines, eq(disciplines.id, marks.disciplineId)).where(eq(marks.id, id)).limit(1);
   if (!row) throw notFound("La marca");
-  if (user.role !== "admin" && row.mark.createdBy !== user.id) throw badRequest("Solo quien la cargó o un administrador puede borrar esta marca.");
   await db.transaction(async (tx) => {
     await tx.delete(marks).where(eq(marks.id, id));
     await recomputePb(tx, row.mark.studentId, toDiscipline(row.discipline));
@@ -89,14 +89,12 @@ const markFields = {
   isPb: marks.isPb,
   pbDelta: marks.pbDelta,
   courseAt: marks.courseAt,
-  createdBy: marks.createdBy,
   createdByName: author.username,
 };
 
-type RawMark = { createdBy: string } & Omit<MarkRow, "canDelete">;
-function present<T extends RawMark>(m: T, user: SessionUser): Omit<T, "createdBy"> & { canDelete: boolean } {
-  const { createdBy, ...rest } = m;
-  return { ...rest, canDelete: user.role === "admin" || createdBy === user.id };
+type RawMark = Omit<MarkRow, "canDelete">;
+function present<T extends RawMark>(m: T, user: SessionUser): T & { canDelete: boolean } {
+  return { ...m, canDelete: isAdmin(user.role) };
 }
 
 /** Historial de un alumno, del más nuevo al más viejo. */

@@ -1,6 +1,8 @@
 import { sql } from "drizzle-orm";
 import { boolean, date, doublePrecision, index, integer, jsonb, pgTable, primaryKey, smallint, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
+import type { Role } from "@shared/domain/roles";
+
 const ts = () => timestamp({ withTimezone: true });
 
 export const users = pgTable("users", {
@@ -10,7 +12,7 @@ export const users = pgTable("users", {
   usernameKey: text().notNull().unique(),
   firstName: text().notNull(),
   lastName: text().notNull(),
-  role: text().$type<"admin" | "teacher">().notNull().default("teacher"),
+  role: text().$type<Role>().notNull().default("teacher"),
   /** Sin esto no entra: así se limita quién tiene acceso. */
   active: boolean().notNull().default(true),
   mustChangePassword: boolean().notNull().default(true),

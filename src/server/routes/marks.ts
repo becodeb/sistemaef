@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { saveMarksBody } from "@shared/contracts";
-import { currentUser } from "../auth";
+import { currentUser, requireAdmin } from "../auth";
 import { readJson } from "../lib/errors";
 import { log } from "../lib/logger";
 import { audit } from "../services/audit";
@@ -27,9 +27,9 @@ export const markRoutes = new Hono<AppEnv>()
     log.info("marks_saved", { saved: result.saved, absent: result.absent });
     return c.json(result, 201);
   })
-  .delete("/:id", async (c) => {
+  .delete("/:id", requireAdmin, async (c) => {
     const user = currentUser(c);
-    const mark = await deleteMark(user, c.req.param("id"));
+    const mark = await deleteMark(c.req.param("id"));
     await audit(user.id, "mark_deleted", mark.id, { studentId: mark.studentId, disciplineId: mark.disciplineId, value: mark.value, takenOn: mark.takenOn });
     return c.json({ ok: true });
   });

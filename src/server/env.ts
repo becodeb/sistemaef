@@ -12,8 +12,8 @@ const schema = z.object({
   PUBLIC_URL: z.string().url().default("http://localhost:5173"),
   /** Detrás de Traefik/Cloudflare: creer en X-Forwarded-For / CF-Connecting-IP. */
   TRUST_PROXY: bool.default(false),
-  /** Crean la primera cuenta si la base no tiene usuarios; al entrar pide cambiar la contraseña. */
-  ADMIN_USERNAME: z.string().trim().min(1).default("Administrador"),
+  /** Crean la primera cuenta (admin general) si la base no tiene usuarios; al entrar pide cambiar la contraseña. */
+  ADMIN_USERNAME: z.string().trim().min(1).default("Admin General"),
   ADMIN_PASSWORD: z.string().default(""),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
 });

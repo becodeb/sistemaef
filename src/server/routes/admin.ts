@@ -3,7 +3,7 @@ import { asc, count, eq, sql } from "drizzle-orm";
 import { createUserBody, disciplineBody, updateDisciplineBody, updateUserBody, type Discipline, type UserCreated, type UserRow } from "@shared/contracts";
 import { fmtTime, fmtNumber } from "@shared/domain/marks";
 import { nameKey } from "@shared/domain/names";
-import { currentUser, dropSessions, requireAdmin } from "../auth";
+import { currentUser, dropSessions, requireAdmin, requireSuper } from "../auth";
 import { db } from "../db/client";
 import { disciplines, marks, users } from "../db/schema";
 import { hashPassword, tempPassword } from "../lib/crypto";
@@ -30,13 +30,17 @@ async function userOr404(id: string) {
   return u;
 }
 
-async function otherActiveAdmins(id: string) {
-  const [row] = await db.select({ n: count() }).from(users).where(sql`${users.role} = 'admin' and ${users.active} and ${users.id} <> ${id}`);
+async function otherActiveSupers(id: string) {
+  const [row] = await db.select({ n: count() }).from(users).where(sql`${users.role} = 'superadmin' and ${users.active} and ${users.id} <> ${id}`);
   return row!.n;
 }
 
 export const adminRoutes = new Hono<AppEnv>()
-  .use("*", requireAdmin)
+  // Crear usuarios y dar accesos es solo del admin general.
+  .use("/users", requireSuper)
+  .use("/users/*", requireSuper)
+  .use("/disciplines", requireAdmin)
+  .use("/disciplines/*", requireAdmin)
   .get("/users", async (c) => {
     const rows = await db.select().from(users).orderBy(asc(users.lastName), asc(users.firstName));
     return c.json(rows.map(toRow));
@@ -60,8 +64,8 @@ export const adminRoutes = new Hono<AppEnv>()
     const me = currentUser(c);
     const u = await userOr404(c.req.param("id"));
     const body = await readJson(c, updateUserBody);
-    const losesAdmin = u.role === "admin" && u.active && (body.active === false || body.role === "teacher");
-    if (losesAdmin && (await otherActiveAdmins(u.id)) === 0) throw badRequest("Tiene que quedar al menos un administrador con acceso.");
+    const losesSuper = u.role === "superadmin" && u.active && (body.active === false || (body.role != null && body.role !== "superadmin"));
+    if (losesSuper && (await otherActiveSupers(u.id)) === 0) throw badRequest("Tiene que quedar al menos un admin general con acceso.");
     const [row] = await db.update(users).set(body).where(eq(users.id, u.id)).returning();
     // Sacarle el acceso corta sus sesiones en el momento.
     if (body.active === false) await dropSessions(u.id);

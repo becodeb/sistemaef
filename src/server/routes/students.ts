@@ -55,7 +55,7 @@ export const studentRoutes = new Hono<AppEnv>()
     const body: StudentContext = { best: bests.get(s.id) ?? null, courseBest: course[s.course] ?? null, marks: list.slice(0, 4), total: list.filter((m) => m.value != null).length };
     return c.json(body);
   })
-  .put("/:id/goals/:disciplineId", async (c) => {
+  .put("/:id/goals/:disciplineId", requireAdmin, async (c) => {
     const user = currentUser(c);
     const s = await studentOr404(c.req.param("id"));
     const d = await getDiscipline(c.req.param("disciplineId"));

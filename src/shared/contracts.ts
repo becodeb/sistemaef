@@ -1,6 +1,7 @@
 // Cuerpos de los pedidos a la API (zod) y tipos de las respuestas; los usan el servidor y el cliente.
 import { z } from "zod";
 import { COURSES, GENDERS, HOUSES } from "./domain/school";
+import { ROLES, type Role } from "./domain/roles";
 import type { DisciplineDef } from "./domain/marks";
 
 const name = z.string().trim().min(1, "Escribí este dato.").max(80);
@@ -23,9 +24,9 @@ export const createUserBody = z.object({
   lastName: name,
   /** Vacía: el servidor genera una. */
   password: z.string().min(8, "La contraseña tiene que tener al menos 8 caracteres.").max(200).optional(),
-  role: z.enum(["admin", "teacher"]).default("teacher"),
+  role: z.enum(ROLES).default("teacher"),
 });
-export const updateUserBody = z.object({ active: z.boolean().optional(), role: z.enum(["admin", "teacher"]).optional() });
+export const updateUserBody = z.object({ active: z.boolean().optional(), role: z.enum(ROLES).optional() });
 
 export const studentBody = z.object({ firstName: name, lastName: name, course, house, gender: gender.default(null) });
 export const updateStudentBody = z.object({ firstName: name, lastName: name, course, house, gender, active: z.boolean() }).partial();
@@ -67,7 +68,7 @@ export const updateDisciplineBody = z.object({
 });
 
 // ---------- Respuestas ----------
-export type Me = { id: string; username: string; firstName: string; lastName: string; role: "admin" | "teacher"; mustChangePassword: boolean };
+export type Me = { id: string; username: string; firstName: string; lastName: string; role: Role; mustChangePassword: boolean };
 export type Discipline = DisciplineDef & { id: string; icon: string; sort: number; active: boolean; markCount?: number };
 export type Student = { id: string; firstName: string; lastName: string; course: string; house: string; gender: string | null; active: boolean };
 export type Best = { value: number; takenOn: string };
@@ -95,7 +96,7 @@ export type StudentContext = { best: Best | null; courseBest: number | null; mar
 export type ProfileDiscipline = { disciplineId: string; marks: MarkRow[]; goal: number | null };
 export type Profile = { student: Student; disciplines: ProfileDiscipline[] };
 
-export type UserRow = { id: string; username: string; firstName: string; lastName: string; role: "admin" | "teacher"; active: boolean; mustChangePassword: boolean; lastLoginAt: string | null };
+export type UserRow = { id: string; username: string; firstName: string; lastName: string; role: Role; active: boolean; mustChangePassword: boolean; lastLoginAt: string | null };
 export type UserCreated = { user: UserRow; password: string };
 export type ImportRowResult = { line: number; action: "create" | "update" | "same" | "ambiguous"; name: string; detail?: string };
 export type ImportResult = { dryRun: boolean; created: number; updated: number; same: number; ambiguous: number; rows: ImportRowResult[] };

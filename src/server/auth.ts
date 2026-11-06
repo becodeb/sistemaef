@@ -3,6 +3,7 @@ import type { Context, MiddlewareHandler } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { and, eq, gt, ne } from "drizzle-orm";
 import type { Me } from "@shared/contracts";
+import { isAdmin, isSuper } from "@shared/domain/roles";
 import { db } from "./db/client";
 import { sessions, users } from "./db/schema";
 import { secureCookies } from "./env";
@@ -67,7 +68,12 @@ export const requireUser: MiddlewareHandler<AppEnv> = async (c, next) => {
 };
 
 export const requireAdmin: MiddlewareHandler<AppEnv> = async (c, next) => {
-  if (currentUser(c).role !== "admin") throw forbidden("Solo un administrador puede hacer esto.");
+  if (!isAdmin(currentUser(c).role)) throw forbidden("Solo un administrador puede hacer esto.");
+  await next();
+};
+
+export const requireSuper: MiddlewareHandler<AppEnv> = async (c, next) => {
+  if (!isSuper(currentUser(c).role)) throw forbidden("Solo un admin general puede hacer esto.");
   await next();
 };
 
