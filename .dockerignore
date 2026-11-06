@@ -1,0 +1,12 @@
+node_modules
+dist
+private
+.env
+.env.*
+!.env.example
+.git
+coverage
+test-results
+docs
+tests
+.claude

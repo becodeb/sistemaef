@@ -1,0 +1,11 @@
+node_modules
+dist
+.env
+.env.*
+!.env.example
+coverage
+test-results
+*.log
+# Listas reales de alumnos: son datos de menores y nunca van al repo
+private/
+*.xlsx
