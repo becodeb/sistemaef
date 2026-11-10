@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Me, Student } from "@shared/contracts";
-import { COURSES, GENDER_NAMES, GROUPS, LEVELS, courseLabel, todayAR } from "@shared/domain/school";
+import { COURSES, GENDER_NAMES, HOUSES, LEVELS, courseLabel, groupByKey, groupKeyOf, todayAR } from "@shared/domain/school";
 import { fullName, matchesName } from "@shared/domain/names";
 import { parseEntry } from "@shared/domain/marks";
 import { Avatar, DisciplineTiles, Icon, Loading, StudentFacts } from "../../components/ui";
@@ -110,20 +110,26 @@ function StudentPicker({ wiz, update }: Pick<Props, "wiz" | "update">) {
 }
 
 function GroupPicker({ wiz, update }: Pick<Props, "wiz" | "update">) {
-  const btn = (key: string, label: string) => (
-    <button key={key} type="button" aria-pressed={wiz.group === key} onClick={() => update({ group: key })}><b className="num">{label}</b></button>
+  // Curso y house se eligen por separado y se combinan: c:6ES, h:earth o c:6ES+h:earth.
+  const g = groupByKey(wiz.group);
+  const pick = (course?: string | null, house?: string | null) => update({ group: groupKeyOf(course, house) });
+  const btn = (key: string, label: string, on: boolean, onClick: () => void) => (
+    <button key={key} type="button" aria-pressed={on} onClick={onClick}><b className="num">{label}</b></button>
   );
   return (
     <>
+      <p className="hint first">Elegí un curso, un house o los dos: por ejemplo 6.º ES solo de Earth. Tocá de nuevo para sacarlo.</p>
       {LEVELS.map((l) => (
         <div className="field" key={l.key}>
           <span className="lbl">{l.name}</span>
-          <div className="gpick">{COURSES.filter((c) => c.endsWith(l.key)).map((c) => btn(`c:${c}`, courseLabel(c)))}</div>
+          <div className="gpick">
+            {COURSES.filter((c) => c.endsWith(l.key)).map((c) => btn(c, courseLabel(c), g?.course === c, () => pick(g?.course === c ? null : c, g?.house)))}
+          </div>
         </div>
       ))}
       <div className="field">
         <span className="lbl">House</span>
-        <div className="gpick teams">{GROUPS.filter((g) => g.type === "house").map((g) => btn(g.key, g.short))}</div>
+        <div className="gpick teams">{HOUSES.map((h) => btn(h, HOUSE_NAMES[h]!, g?.house === h, () => pick(g?.course, g?.house === h ? null : h)))}</div>
       </div>
       <div className="field">
         <span className="lbl">¿Quiénes?</span>
@@ -140,7 +146,7 @@ function GroupPicker({ wiz, update }: Pick<Props, "wiz" | "update">) {
 export function PasoDos({ wiz, update, ready }: Props) {
   const { list, byId, isLoading } = useDisciplines();
   const { data: me } = useMe();
-  const missing = wiz.mode === "group" ? (!wiz.group ? "Falta elegir el curso o el house." : !wiz.disciplineId ? "Falta elegir la disciplina." : "") : !wiz.student ? "Falta elegir el alumno." : !wiz.disciplineId ? "Falta elegir la disciplina." : "";
+  const missing = wiz.mode === "group" ? (!wiz.group ? "Falta elegir un curso, un house o los dos." : !wiz.disciplineId ? "Falta elegir la disciplina." : "") : !wiz.student ? "Falta elegir el alumno." : !wiz.disciplineId ? "Falta elegir la disciplina." : "";
   const d = byId(wiz.disciplineId);
   const draft = wiz.mode === "group" && ready && d && me ? loadDraft((me as Me).id, { group: wiz.group!, gender: wiz.gender, disciplineId: d.id }) : null;
   const anotados = draft && d ? Object.values(draft.vals).filter((v) => parseEntry(d, v).ok).length : 0;

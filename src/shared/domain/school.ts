@@ -22,15 +22,35 @@ export function courseName(course: string): string {
   return `${course[0]}.º año de ${(level?.name ?? "").toLowerCase()}`;
 }
 
-/** Un grupo para cargar marcas: un curso (c:6ES) o un house (h:earth). */
+/** Un grupo para cargar marcas: un curso (c:6ES), un house (h:earth) o los dos juntos (c:6ES+h:earth). */
 export type Group = { key: string; type: "course" | "house"; name: string; short: string; course?: string; house?: House };
 
-export const GROUPS: Group[] = [
-  ...COURSES.map((course): Group => ({ key: `c:${course}`, type: "course", name: courseName(course), short: courseLabel(course), course })),
-  ...HOUSES.map((house): Group => ({ key: `h:${house}`, type: "house", name: `House ${HOUSE_NAMES[house]}`, short: HOUSE_NAMES[house]!, house })),
-];
+export function groupKeyOf(course?: string | null, house?: string | null): string | null {
+  const parts = [course && `c:${course}`, house && `h:${house}`].filter(Boolean);
+  return parts.length ? parts.join("+") : null;
+}
 
-export const groupByKey = (key: string | null | undefined) => GROUPS.find((g) => g.key === key);
+export function groupByKey(key: string | null | undefined): Group | undefined {
+  if (!key) return undefined;
+  let course: string | undefined;
+  let house: House | undefined;
+  for (const part of key.split("+")) {
+    const value = part.slice(2);
+    if (part.startsWith("c:") && !course && COURSES.includes(value)) course = value;
+    else if (part.startsWith("h:") && !house && (HOUSES as readonly string[]).includes(value)) house = value as House;
+    else return undefined;
+  }
+  return {
+    key: groupKeyOf(course, house)!,
+    type: course ? "course" : "house",
+    name: [course && courseName(course), house && `House ${HOUSE_NAMES[house]}`].filter(Boolean).join(" · "),
+    short: [course && courseLabel(course), house && HOUSE_NAMES[house]].filter(Boolean).join(" · "),
+    course,
+    house,
+  };
+}
+
+export const GROUPS: Group[] = [...COURSES.map((c) => groupByKey(`c:${c}`)!), ...HOUSES.map((h) => groupByKey(`h:${h}`)!)];
 
 /** Fecha de hoy en Argentina como YYYY-MM-DD; el servidor corre en UTC y de noche sería mañana. */
 export function todayAR(now = new Date()): string {

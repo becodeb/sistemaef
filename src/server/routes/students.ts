@@ -146,7 +146,7 @@ export const rosterRoutes = new Hono<AppEnv>().get("/", async (c) => {
   const rows = await db
     .select()
     .from(students)
-    .where(and(eq(students.active, true), group.course ? eq(students.course, group.course) : eq(students.house, group.house!), genderCond(gender)))
+    .where(and(eq(students.active, true), group.course ? eq(students.course, group.course) : undefined, group.house ? eq(students.house, group.house) : undefined, genderCond(gender)))
     .orderBy(...LIST_ORDER);
   const [bests, courseBest] = await Promise.all([bestsByStudent(d), courseBests(d)]);
   const body: Roster = { students: rows.map((s) => ({ ...toStudent(s), best: bests.get(s.id) ?? null })), courseBest };

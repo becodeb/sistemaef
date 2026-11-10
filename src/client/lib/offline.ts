@@ -51,7 +51,7 @@ export const isOfflineError = (err: unknown) => err instanceof ApiError && (err.
 /** Sin señal y sin la lista del grupo guardada: se arma con la lista completa de alumnos, sin mejores marcas. */
 export function rosterFromStudents(all: Student[], group: Group, gender: string): RosterStudent[] {
   return all
-    .filter((s) => s.active && (group.course ? s.course === group.course : s.house === group.house) && (!gender || s.gender === gender))
+    .filter((s) => s.active && (!group.course || s.course === group.course) && (!group.house || s.house === group.house) && (!gender || s.gender === gender))
     .sort((a, b) => a.lastName.localeCompare(b.lastName, "es") || a.firstName.localeCompare(b.firstName, "es"))
     .map((s) => ({ ...s, best: null }));
 }

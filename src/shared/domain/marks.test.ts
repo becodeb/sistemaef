@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { cleanRaw, fmtMark, fmtSigned, parseEntry, personalBests, type DisciplineDef } from "./marks";
 import { parseCourse, parseRoster } from "./roster-import";
 import { nameKey } from "./names";
-import { COURSES, GROUPS, courseLabel, courseName, todayAR } from "./school";
+import { COURSES, GROUPS, courseLabel, courseName, groupByKey, groupKeyOf, todayAR } from "./school";
 
 const alto: DisciplineDef = { name: "Salto en alto", what: "Altura", kind: "dec", unit: "m", better: "hi", decimals: 2, lo: 0.6, hi: 2.3, example: "1,35", hint: null };
 const res: DisciplineDef = { name: "Resistencia 1000 m", what: "Tiempo", kind: "ms", unit: "min", better: "lo", decimals: 0, lo: 150, hi: 900, example: "4:35", hint: null };
@@ -95,6 +95,15 @@ describe("colegio", () => {
   it("tiene 12 cursos y 3 houses, sin divisiones", () => {
     expect(COURSES).toHaveLength(12);
     expect(GROUPS.filter((g) => g.type === "house").map((g) => g.short)).toEqual(["Earth", "Wind", "Water"]);
+  });
+  it("combina curso y house en un grupo", () => {
+    const g = groupByKey("c:6ES+h:earth")!;
+    expect(g).toMatchObject({ course: "6ES", house: "earth", short: "6.º ES · Earth", name: "6.º año de secundaria · House Earth" });
+    expect(groupKeyOf("6ES", "earth")).toBe("c:6ES+h:earth");
+    expect(groupKeyOf(null, "wind")).toBe("h:wind");
+    expect(groupKeyOf(null, null)).toBeNull();
+    expect(groupByKey("h:earth+c:6ES")!.key).toBe("c:6ES+h:earth");
+    for (const bad of ["c:6N", "c:6ES+c:5ES", "h:fire", "c:6ES+x:1", ""]) expect(groupByKey(bad)).toBeUndefined();
   });
   it("nombra los cursos", () => {
     expect(courseLabel("6ES")).toBe("6.º ES");

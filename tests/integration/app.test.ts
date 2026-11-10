@@ -213,6 +213,9 @@ describe("grupos y estadísticas", () => {
     expect(await names("group=h:earth")).toEqual(["Aguirre", "Cabrera", "Domínguez"]);
     expect(await names("group=c:6ES&gender=m")).toEqual(["Aguirre", "Cabrera"]);
     expect(await names("group=c:6ES&gender=h")).toEqual(["Bianchi"]);
+    // Curso y house juntos
+    expect(await names(`group=${encodeURIComponent("c:6ES+h:earth")}`)).toEqual(["Aguirre", "Cabrera"]);
+    expect(await names(`group=${encodeURIComponent("c:6ES+h:wind")}&gender=m`)).toEqual([]);
     const roster = await call(admin, "GET", `/roster?disciplineId=${alto}&group=c:6ES`);
     expect(roster.body.students.find((s: any) => s.id === bruno).best.value).toBe(1.5);
     expect(roster.body.courseBest["6ES"]).toBe(1.5);
