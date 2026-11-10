@@ -87,6 +87,15 @@ export function createApp(opts: { staticDir?: string | null } = {}) {
         },
       }),
     );
+    // El service worker y el manifiesto se revisan en cada visita: así llegan las versiones nuevas.
+    app.use("/sw.js", async (c, next) => {
+      await next();
+      c.header("Cache-Control", "no-cache");
+    });
+    app.use("/manifest.json", async (c, next) => {
+      await next();
+      c.header("Cache-Control", "no-cache");
+    });
     app.use("*", serveStatic({ root }));
     // Cualquier otra ruta es de la app de una sola página.
     app.get("*", (c) => {

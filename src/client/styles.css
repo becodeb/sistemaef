@@ -464,6 +464,14 @@ tr[data-state="err"] .cell { color: var(--warn); }
 .dialog-body p { margin: 0; color: var(--muted); }
 .dialog .actions { margin-top: 18px; }
 
+/* ---------- Sin conexión ---------- */
+.offline-bar { display: grid; gap: 8px; margin-bottom: 16px; padding: 12px 16px; border-radius: var(--r-md); background: var(--accent-soft); border: 1px solid var(--accent-line); font-size: 14px; }
+.offline-bar.is-off { background: var(--warn-soft); border-color: transparent; color: var(--ink); }
+.offline-bar p { margin: 0; }
+.offline-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.offline-row p { flex: 1 1 260px; }
+.offline-row.is-err { color: var(--warn); }
+
 /* ---------- Tablet y teléfono ---------- */
 @media (max-width: 1180px) {
   .grid, .grid.half, .grid.wide-side { grid-template-columns: minmax(0, 1fr); }

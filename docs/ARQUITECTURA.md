@@ -58,6 +58,25 @@ tiene usuarios. Tiene que quedar siempre al menos un admin general con acceso.
 - `batchId` identifica cada envío y es único con el alumno: si el teléfono reintenta por mala señal, no se duplica nada.
 - La planilla sin guardar vive en `localStorage` (`client/lib/drafts.ts`), por dispositivo y usuario: la cancha puede no tener señal.
 
+## Sin señal
+
+La app se instala en el teléfono (`public/manifest.json`) y abre sin conexión. El servidor sigue siendo la única fuente
+compartida: lo que carga un profe lo ven todos apenas llega.
+
+- `public/sw.js` guarda **solo la app**, nunca la API. Páginas: primero la red y, sin señal, la app guardada. `/assets/*`:
+  lo guardado, porque el nombre trae el hash. `scripts/stamp-sw.mjs` le pone una versión nueva en cada build, así los
+  teléfonos se actualizan y borran la anterior.
+- `client/lib/offline.ts` guarda en `localStorage` las consultas necesarias para cargar (usuario, disciplinas, lista de
+  alumnos, listas de grupo, últimos registros) y las restaura al abrir. Al cerrar sesión se borran.
+- Sin la lista de un grupo guardada, se arma desde la lista completa de alumnos (`rosterFromStudents`), sin mejores marcas.
+- **Cola de envíos**: si guardar falla por falta de conexión (o 502/503/504), la carga queda en `record:outbox:<usuario>`
+  y se manda sola al volver la señal, al abrir la app o cada 20 s. Cada carga conserva su `batchId`, así que reintentar
+  nunca duplica. Si el servidor la rechaza (por ejemplo, un alumno dado de baja), queda marcada con el motivo para
+  reintentar o descartar. La cola sobrevive al cierre de sesión y se envía cuando ese usuario vuelve a entrar.
+- Las marcas solo se suman, nunca se pisan: dos profes sin señal no generan conflictos, y la marca personal se recalcula
+  en el servidor con todo el historial.
+- Para probarlo: el navegador integrado del editor no soporta service workers; usar Chrome o Playwright con `setOffline`.
+
 ## Datos de menores
 
 - Las listas reales **nunca van al repo**: `private/` y `*.xlsx` están ignorados. Se importan desde Administración → Alumnos.

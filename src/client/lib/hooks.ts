@@ -16,6 +16,10 @@ export const queryClient: QueryClient = new QueryClient({
     queries: {
       queryFn: ({ queryKey, signal }) => api.get(queryKey[0] as string, signal),
       staleTime: 15_000,
+      // Sin señal muestra lo guardado en el teléfono y vuelve a pedir al reconectarse,
+      // así cada profe ve lo que cargaron los demás.
+      networkMode: "offlineFirst",
+      refetchOnReconnect: true,
       refetchOnWindowFocus: false,
       retry: (count, err) => (err instanceof ApiError && !err.isNetwork && err.status < 500 ? false : count < 2),
     },

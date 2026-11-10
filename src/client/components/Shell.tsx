@@ -5,6 +5,8 @@ import { initials } from "@shared/domain/names";
 import { ROLE_NAMES, isAdmin, isSuper } from "@shared/domain/roles";
 import { api } from "../lib/api";
 import { queryClient, setMe } from "../lib/hooks";
+import { clearCache } from "../lib/offline";
+import { OfflineBar } from "./OfflineBar";
 import { Icon } from "./ui";
 
 // Docente: solo cargar marcas y ver alumnos. El resto aparece desde admin en adelante.
@@ -31,6 +33,8 @@ export function Shell({ me, children }: { me: Me; children: ReactNode }) {
     await api.post("/api/auth/logout").catch(() => undefined);
     queryClient.clear();
     setMe(null);
+    // Las listas de alumnos no quedan en el teléfono; las cargas sin enviar sí, hasta que vuelva a entrar.
+    clearCache();
     nav("/");
   };
   const links = (
@@ -85,7 +89,10 @@ export function Shell({ me, children }: { me: Me; children: ReactNode }) {
           <button className="menu-btn" type="button" aria-expanded={menu} onClick={() => setMenu((m) => !m)}>{menu ? "Cerrar" : "Menú"}</button>
         </header>
         {menu && <div className="mobile-menu">{links}{account}</div>}
-        <main className="main">{children}</main>
+        <main className="main">
+          <OfflineBar userId={me.id} />
+          {children}
+        </main>
       </div>
     </div>
   );

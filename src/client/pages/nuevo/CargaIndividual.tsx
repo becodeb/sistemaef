@@ -6,9 +6,9 @@ import { fmtMark, hintFor, parseEntry, cleanRaw } from "@shared/domain/marks";
 import { todayAR, courseLabel } from "@shared/domain/school";
 import { fullName } from "@shared/domain/names";
 import { Avatar, ErrorBox, Icon, Loading, StudentFacts } from "../../components/ui";
-import { api } from "../../lib/api";
 import { ddmm } from "../../lib/format";
-import { refreshData, useApi, useDisciplines } from "../../lib/hooks";
+import { refreshData, useApi, useDisciplines, useMe } from "../../lib/hooks";
+import { sendMarks } from "../../lib/offline";
 import { Verdict } from "./Verdict";
 import type { Wizard } from "./NuevoRegistro";
 
@@ -21,7 +21,8 @@ export function CargaIndividual({ wiz, update }: { wiz: Wizard; update: (p: Part
 
   const [raw, setRaw] = useState("");
   const [absent, setAbsent] = useState(false);
-  const [saved, setSaved] = useState<{ result: SaveResult; value: number | null } | null>(null);
+  const [saved, setSaved] = useState<{ result: SaveResult; value: number | null; queued: boolean } | null>(null);
+  const { data: me } = useMe();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Un envío por marca: si se reintenta el mismo, no se duplica.
@@ -41,11 +42,16 @@ export function CargaIndividual({ wiz, update }: { wiz: Wizard; update: (p: Part
     setBusy(true);
     setError(null);
     try {
-      const result = await api.post<SaveResult>("/api/marks", { batchId: batch.current.id, disciplineId: d.id, takenOn: wiz.date, entries: [{ studentId: s.id, value }] });
+      const body = { batchId: batch.current.id, disciplineId: d.id, takenOn: wiz.date, entries: [{ studentId: s.id, value }] };
+      const { result, queued } = await sendMarks(me!.id, body, `${fullName(s)} · ${d.name}`);
       batch.current = null;
-      setSaved({ result, value });
-      toast.success(`Guardado: ${fullName(s)} · ${value == null ? "ausente" : fmtMark(value, d)}`);
-      void refreshData();
+      setSaved({ result, value, queued });
+      const what = `${fullName(s)} · ${value == null ? "ausente" : fmtMark(value, d)}`;
+      if (queued) toast(`Sin conexión: ${what} quedó en el teléfono para enviarse`);
+      else {
+        toast.success(`Guardado: ${what}`);
+        void refreshData();
+      }
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -58,11 +64,11 @@ export function CargaIndividual({ wiz, update }: { wiz: Wizard; update: (p: Part
     return (
       <div className="card saved">
         <div className="tick"><Icon name="check" size={26} /></div>
-        <h2>{saved.value == null ? "Ausente registrado" : "Marca guardada"}</h2>
+        <h2>{saved.queued ? "Guardada en este teléfono" : saved.value == null ? "Ausente registrado" : "Marca guardada"}</h2>
         <p className="sub">{fullName(s)} · {courseLabel(s.course)} · {d.name}</p>
         <div className="mk num">{saved.value == null ? "Ausente" : fmtMark(saved.value, d)}</div>
         {isPb && <span className="chip pb">Nueva marca personal</span>}
-        <p className="sub">Queda en su perfil, junto con todas sus marcas.</p>
+        <p className="sub">{saved.queued ? "No hay conexión: se envía sola cuando vuelva la señal, y ahí aparece en su perfil." : "Queda en su perfil, junto con todas sus marcas."}</p>
         <div className="actions center">
           <button className="btn" type="button" onClick={() => update({ student: null, step: 2 }, false)}>Otro alumno en {d.name}</button>
           <button className="btn pri" type="button" autoFocus onClick={() => { setSaved(null); setRaw(""); setAbsent(false); }}>Otra marca para {s.firstName}</button>

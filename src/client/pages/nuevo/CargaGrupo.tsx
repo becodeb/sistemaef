@@ -2,13 +2,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
-import type { Discipline, RosterStudent, Roster, SaveResult } from "@shared/contracts";
+import type { Discipline, RosterStudent, Roster, SaveResult, Student } from "@shared/contracts";
 import { cleanRaw, fmtMark, fmtSigned, hintFor, isBetter, parseEntry } from "@shared/domain/marks";
 import { courseLabel, GENDER_NAMES, groupByKey, HOUSE_NAMES } from "@shared/domain/school";
 import { fullName, listName, matchesName } from "@shared/domain/names";
 import { Avatar, Empty, ErrorBox, HouseChip, Icon, Loading, StudentFacts } from "../../components/ui";
-import { api, withQuery } from "../../lib/api";
+import { withQuery } from "../../lib/api";
 import { loadDraft, removeDraft, saveDraft, type Draft } from "../../lib/drafts";
+import { isOfflineError, rosterFromStudents, sendMarks } from "../../lib/offline";
 import { ddmm, plural } from "../../lib/format";
 import { refreshData, useApi, useDisciplines, useMe } from "../../lib/hooks";
 import { Verdict } from "./Verdict";
@@ -41,7 +42,7 @@ function Status({ d, raw, best }: { d: Discipline; raw?: string; best?: number }
   return <span className="st-chip s-ok">Cargado</span>;
 }
 
-type Saved = { result: SaveResult; pending: number; names: Map<string, string> };
+type Saved = { result: SaveResult; queued: boolean; pending: number; names: Map<string, string> };
 
 export function CargaGrupo({ wiz, update }: { wiz: Wizard; update: (p: Partial<Wizard>, replace?: boolean) => void }) {
   const { byId } = useDisciplines();
@@ -50,7 +51,11 @@ export function CargaGrupo({ wiz, update }: { wiz: Wizard; update: (p: Partial<W
   const group = groupByKey(wiz.group)!;
   const ref = useMemo(() => ({ group: wiz.group!, gender: wiz.gender, disciplineId: wiz.disciplineId! }), [wiz.group, wiz.gender, wiz.disciplineId]);
   const userId = me!.id;
-  const roster = useApi<Roster>(withQuery("/api/roster", { group: wiz.group, gender: wiz.gender, disciplineId: wiz.disciplineId }));
+  const rosterQuery = useApi<Roster>(withQuery("/api/roster", { group: wiz.group, gender: wiz.gender, disciplineId: wiz.disciplineId }));
+  const allStudents = useApi<Student[]>("/api/students");
+  // Sin señal y sin esta lista guardada: sale de la lista completa del teléfono, sin mejores marcas.
+  const offlineList = !rosterQuery.data && (rosterQuery.fetchStatus === "paused" || isOfflineError(rosterQuery.error)) && allStudents.data;
+  const roster = { ...rosterQuery, data: rosterQuery.data ?? (offlineList ? { students: rosterFromStudents(allStudents.data!, group, wiz.gender), courseBest: {} } : undefined) };
 
   const [draft, setDraft] = useState<Draft>(() => loadDraft(userId, ref) ?? { vals: {}, idx: 0, date: wiz.date });
   const [saved, setSaved] = useState<Saved | null>(null);
@@ -74,7 +79,7 @@ export function CargaGrupo({ wiz, update }: { wiz: Wizard; update: (p: Partial<W
     return draft.onlyIds ? all.filter((s) => draft.onlyIds!.includes(s.id)) : all;
   }, [roster.data, draft.onlyIds]);
 
-  if (roster.error) return <ErrorBox error={roster.error} retry={() => void roster.refetch()} />;
+  if (roster.error && !roster.data) return <ErrorBox error={roster.error} retry={() => void roster.refetch()} />;
   if (!d || !roster.data) return <Loading />;
 
   const groupTitle = `${group.name}${wiz.gender ? ` · ${GENDER_NAMES[wiz.gender]}` : ""}`;
@@ -85,10 +90,13 @@ export function CargaGrupo({ wiz, update }: { wiz: Wizard; update: (p: Partial<W
     return (
       <div className="card saved">
         <div className="tick"><Icon name="check" size={26} /></div>
-        <h2>Planilla guardada</h2>
-        <p className="sub">{groupTitle} · {d.name} · {ddmm(wiz.date)}. Cada marca quedó en el perfil de su alumno.</p>
+        <h2>{saved.queued ? "Guardada en este teléfono" : "Planilla guardada"}</h2>
+        <p className="sub">
+          {groupTitle} · {d.name} · {ddmm(wiz.date)}.{" "}
+          {saved.queued ? "No hay conexión: se envía sola cuando vuelva la señal, y ahí aparece en los perfiles." : "Cada marca quedó en el perfil de su alumno."}
+        </p>
         <div className="g-sum">
-          <div><b className="num">{r.saved}</b><span>{r.saved === 1 ? "marca guardada" : "marcas guardadas"}</span></div>
+          <div><b className="num">{r.saved}</b><span>{saved.queued ? (r.saved === 1 ? "marca por enviar" : "marcas por enviar") : r.saved === 1 ? "marca guardada" : "marcas guardadas"}</span></div>
           <div><b className="num">{r.absent}</b><span>{r.absent === 1 ? "ausente" : "ausentes"}</span></div>
           <div><b className="num">{saved.pending}</b><span>sin cargar</span></div>
         </div>
@@ -145,7 +153,7 @@ export function CargaGrupo({ wiz, update }: { wiz: Wizard; update: (p: Partial<W
     setSaving(true);
     setSaveError(null);
     try {
-      const result = await api.post<SaveResult>("/api/marks", { batchId, disciplineId: d.id, takenOn: wiz.date, entries });
+      const { result, queued } = await sendMarks(userId, { batchId, disciplineId: d.id, takenOn: wiz.date, entries }, `${groupTitle} · ${d.name}`);
       const done = new Set(entries.map((e) => e.studentId));
       const pendingIds = list.filter((s) => !done.has(s.id)).map((s) => s.id);
       if (pendingIds.length) {
@@ -156,10 +164,13 @@ export function CargaGrupo({ wiz, update }: { wiz: Wizard; update: (p: Partial<W
         removeDraft(userId, ref);
         setDraft({ vals: {}, idx: 0, date: wiz.date });
       }
-      setSaved({ result, pending: pendingIds.length, names: new Map(list.map((s) => [s.id, fullName(s)])) });
+      setSaved({ result, queued, pending: pendingIds.length, names: new Map(list.map((s) => [s.id, fullName(s)])) });
       window.scrollTo(0, 0);
-      toast.success(`Guardado: ${plural(result.saved, "marca", "marcas")} en los perfiles`);
-      void refreshData();
+      if (queued) toast(`Sin conexión: ${plural(result.saved + result.absent, "carga quedó", "cargas quedaron")} en el teléfono para enviarse`);
+      else {
+        toast.success(`Guardado: ${plural(result.saved, "marca", "marcas")} en los perfiles`);
+        void refreshData();
+      }
     } catch (err) {
       // Lo anotado sigue en el borrador: se puede reintentar sin perder nada.
       setSaveError((err as Error).message);
@@ -195,6 +206,7 @@ export function CargaGrupo({ wiz, update }: { wiz: Wizard; update: (p: Partial<W
             <button className="btn pri g-save" type="button" disabled={!canSave} onClick={save}>{label}</button>
           </div>
           {saveError && <p className="form-err" role="alert">{saveError} Lo anotado sigue acá: probá guardar de nuevo.</p>}
+          {offlineList && <p className="hint">Sin conexión: la lista sale de lo guardado en este teléfono y no muestra las mejores marcas.</p>}
         </div>
         {wiz.way === "seq" ? (
           <UnoPorUno d={d} list={list} draft={draft} setDraft={setDraft} setVal={setVal} courseBest={roster.data.courseBest} canSave={canSave} label={label} onSave={save} onSheet={() => update({ way: "sheet" })} />
