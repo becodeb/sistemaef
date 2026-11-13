@@ -90,7 +90,7 @@ export function Shell({ me, children }: { me: Me; children: ReactNode }) {
         </header>
         {menu && <div className="mobile-menu">{links}{account}</div>}
         <main className="main">
-          <OfflineBar userId={me.id} />
+          <OfflineBar userId={me.id} role={me.role} />
           {children}
         </main>
       </div>

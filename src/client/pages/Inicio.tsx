@@ -99,7 +99,7 @@ export function Inicio() {
       </div>
       <div className="head"><div><h1>Resumen deportivo</h1><p className="head-sub">Todos los cursos · {data?.schoolYear ?? ""}</p></div></div>
       {isLoading && <Loading />}
-      {error && <ErrorBox error={error} retry={() => void refetch()} />}
+      {error && !data && <ErrorBox error={error} retry={() => void refetch()} />}
       {data && (
         <>
           {data.students === 0 && (

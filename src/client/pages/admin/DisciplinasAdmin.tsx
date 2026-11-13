@@ -107,7 +107,7 @@ export function DisciplinasAdmin() {
       <div className="card">
         <h2>Disciplinas cargadas</h2>
         {isLoading && <Loading />}
-        {error && <ErrorBox error={error} retry={() => void refetch()} />}
+        {error && !data && <ErrorBox error={error} retry={() => void refetch()} />}
         {data && (
           <div className="tbl-wrap">
             <table>

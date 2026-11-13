@@ -40,7 +40,7 @@ export function Estudiantes() {
           <GenderSeg value={gender} onChange={setGender} />
         </div>
         {isLoading && <Loading />}
-        {error && <ErrorBox error={error} retry={() => void refetch()} />}
+        {error && !data && <ErrorBox error={error} retry={() => void refetch()} />}
         {data && rows.length === 0 && (
           <Empty title={data.length === 0 ? "Todavía no hay alumnos cargados" : "No hay alumnos con esos filtros"}>
             {data.length === 0 && (admin ? <Link className="link" to="/admin/alumnos">Importá la lista de alumnos</Link> : "Un administrador tiene que cargar la lista.")}

@@ -28,7 +28,8 @@ export function CargaIndividual({ wiz, update }: { wiz: Wizard; update: (p: Part
   // Un envío por marca: si se reintenta el mismo, no se duplica.
   const batch = useRef<{ id: string; sig: string } | null>(null);
 
-  if (students.error) return <ErrorBox error={students.error} retry={() => void students.refetch()} />;
+  // Con la lista guardada en el teléfono se sigue aunque el servidor no responda.
+  if (students.error && !students.data) return <ErrorBox error={students.error} retry={() => void students.refetch()} />;
   if (!s || !d) return <Loading />;
 
   const parsed = absent ? { ok: true, absent: true } : parseEntry(d, raw);

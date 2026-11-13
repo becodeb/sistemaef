@@ -50,7 +50,7 @@ export function Rankings() {
             {d && <span className="muted small">{d.better === "hi" ? "Mayor" : "Menor"} {d.what.toLowerCase()} = mejor resultado</span>}
           </div>
           {isLoading && <Loading />}
-          {error && <ErrorBox error={error} retry={() => void refetch()} />}
+          {error && !data && <ErrorBox error={error} retry={() => void refetch()} />}
           {data && data.rows.length === 0 && <Empty title="Todavía no hay marcas con estos filtros" />}
           {data && data.rows.length > 0 && d && (
             <div className="tbl-wrap">

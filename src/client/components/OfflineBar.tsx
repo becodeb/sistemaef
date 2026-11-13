@@ -1,14 +1,15 @@
 // Aviso de «sin conexión» y de cargas esperando para enviarse. También dispara el envío automático.
 import { useEffect, useState } from "react";
+import type { Role } from "@shared/domain/roles";
 import { toast } from "sonner";
 import { ddmm, plural } from "../lib/format";
 import { queryClient, refreshData } from "../lib/hooks";
-import { discardPending, flushOutbox, readOutbox, useOnline, useOutbox, type Pending } from "../lib/offline";
+import { discardPending, flushOutbox, prefetchForOffline, readOutbox, useOnline, useOutbox, type Pending } from "../lib/offline";
 import { Confirm } from "./ui";
 
 const marksIn = (p: Pending) => p.body.entries.length;
 
-export function OfflineBar({ userId }: { userId: string }) {
+export function OfflineBar({ userId, role }: { userId: string; role: Role }) {
   const online = useOnline();
   const pending = useOutbox(userId);
   const [sending, setSending] = useState(false);
@@ -29,7 +30,7 @@ export function OfflineBar({ userId }: { userId: string }) {
 
   // Al abrir, al volver la señal y cada 20 s mientras quede algo, se intenta mandar lo pendiente.
   useEffect(() => {
-    void queryClient.prefetchQuery({ queryKey: ["/api/students"] });
+    if (navigator.onLine) void prefetchForOffline(queryClient, role).catch(() => undefined);
     const run = () => {
       if (readOutbox(userId).some((p) => !p.error)) void send();
     };

@@ -66,8 +66,14 @@ compartida: lo que carga un profe lo ven todos apenas llega.
 - `public/sw.js` guarda **solo la app**, nunca la API. Páginas: primero la red y, sin señal, la app guardada. `/assets/*`:
   lo guardado, porque el nombre trae el hash. `scripts/stamp-sw.mjs` le pone una versión nueva en cada build, así los
   teléfonos se actualizan y borran la anterior.
-- `client/lib/offline.ts` guarda en `localStorage` las consultas necesarias para cargar (usuario, disciplinas, lista de
-  alumnos, listas de grupo, últimos registros) y las restaura al abrir. Al cerrar sesión se borran.
+- `client/lib/offline.ts` guarda en `localStorage` todo lo que se vio (si no entra, lo esencial para cargar) y lo
+  restaura al abrir. Se guarda aunque el último pedido haya fallado por falta de señal, y también al cerrar o
+  minimizar la app. Al abrir con señal, `prefetchForOffline` trae la vista inicial de cada pantalla según el rol.
+  Al cerrar sesión se borra todo.
+- Las pantallas muestran el error solo si no tienen nada guardado (`error && !data`). Sin señal y sin datos, `Loading`
+  explica que eso todavía no está guardado; un perfil nunca abierto muestra al alumno y deja cargarle una marca.
+- Para probar las pantallas sin conexión: `walk.mjs` (Playwright) recorre cada una como docente y admin, en modo avión
+  y con wifi sin internet (servidor que no responde).
 - Sin la lista de un grupo guardada, se arma desde la lista completa de alumnos (`rosterFromStudents`), sin mejores marcas.
 - **Cola de envíos**: si guardar falla por falta de conexión (o 502/503/504), la carga queda en `record:outbox:<usuario>`
   y se manda sola al volver la señal, al abrir la app o cada 20 s. Cada carga conserva su `batchId`, así que reintentar

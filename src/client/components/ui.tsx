@@ -3,6 +3,7 @@ import type { Discipline, Student } from "@shared/contracts";
 import { COURSES, GENDER_NAMES, GENDER_ONE, HOUSES, HOUSE_NAMES, LEVELS, courseLabel, type House } from "@shared/domain/school";
 import { initials } from "@shared/domain/names";
 import { unitName } from "@shared/domain/marks";
+import { useOnline } from "../lib/offline";
 
 const PATHS: Record<string, string> = {
   plus: "M12 5v14M5 12h14",
@@ -63,6 +64,9 @@ export function PageLoading() {
   return <div className="page-loading" role="status">Cargando…</div>;
 }
 export function Loading() {
+  // Sin señal, una consulta sin datos guardados queda en espera: se explica en vez de mostrar «Cargando…» para siempre.
+  const online = useOnline();
+  if (!online) return <p className="muted pad" role="status">Sin conexión: esto todavía no está guardado en este dispositivo. Se va a ver cuando vuelva la señal.</p>;
   return <p className="muted pad" role="status">Cargando…</p>;
 }
 export function ErrorBox({ error, retry }: { error: unknown; retry?: () => void }) {

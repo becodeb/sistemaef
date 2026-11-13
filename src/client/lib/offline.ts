@@ -5,12 +5,15 @@ import { useEffect, useState } from "react";
 import { dehydrate, hydrate, type QueryClient } from "@tanstack/react-query";
 import type { RosterStudent, SaveResult, Student } from "@shared/contracts";
 import type { Group } from "@shared/domain/school";
+import { isAdmin, isSuper, type Role } from "@shared/domain/roles";
 import { ApiError, api } from "./api";
 
 // ---------- Lo que se guarda del caché ----------
+// Todo lo que se vio queda guardado, así cada pantalla abre sin señal con lo último que mostró.
+// Si no entra en el almacenamiento, se guarda al menos lo necesario para cargar marcas.
 const CACHE_KEY = "record:cache";
-const KEEP = [/^\/api\/auth\/me$/, /^\/api\/disciplines$/, /^\/api\/students$/, /^\/api\/roster\?/, /^\/api\/students\/[^/]+\/context\?/, /^\/api\/marks\?/];
-const keep = (key: unknown) => typeof key === "string" && KEEP.some((re) => re.test(key));
+const ESSENTIAL = [/^\/api\/auth\/me$/, /^\/api\/disciplines$/, /^\/api\/students$/, /^\/api\/roster\?/, /^\/api\/marks\?/];
+const isApi = (key: unknown): key is string => typeof key === "string" && key.startsWith("/api/");
 
 export function restoreCache(qc: QueryClient) {
   try {
@@ -23,16 +26,33 @@ export function restoreCache(qc: QueryClient) {
 
 export function persistCache(qc: QueryClient) {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  // Se guarda todo lo que tiene datos, aunque el último intento haya fallado por falta de señal:
+  // si no, al recargar sin conexión se perdería justo lo que hace falta.
+  const save = (keep: (key: string) => boolean) => {
+    const state = dehydrate(qc, { shouldDehydrateQuery: (q) => q.state.data !== undefined && isApi(q.queryKey[0]) && keep(q.queryKey[0]) });
+    for (const q of state.queries) Object.assign(q.state, { status: "success", error: null, fetchStatus: "idle", fetchFailureCount: 0, fetchFailureReason: null });
+    localStorage.setItem(CACHE_KEY, JSON.stringify(state));
+  };
+  const flush = () => {
+    clearTimeout(timer);
+    try {
+      save(() => true);
+    } catch {
+      try {
+        save((key) => ESSENTIAL.some((re) => re.test(key)));
+      } catch {
+        // Sin almacenamiento: la app sigue andando con conexión.
+      }
+    }
+  };
   qc.getQueryCache().subscribe(() => {
     clearTimeout(timer);
-    timer = setTimeout(() => {
-      try {
-        const state = dehydrate(qc, { shouldDehydrateQuery: (q) => q.state.status === "success" && keep(q.queryKey[0]) });
-        localStorage.setItem(CACHE_KEY, JSON.stringify(state));
-      } catch {
-        // Sin espacio o sin almacenamiento: la app sigue andando con conexión.
-      }
-    }, 800);
+    timer = setTimeout(flush, 300);
+  });
+  // Si cierran la app o pasan a otra justo después de ver algo, se guarda en el momento.
+  window.addEventListener("pagehide", flush);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flush();
   });
 }
 
@@ -43,6 +63,29 @@ export function clearCache() {
   } catch {
     // Nada que hacer.
   }
+}
+
+/**
+ * Al abrir la app con señal, trae las vistas iniciales de cada pantalla, así quedan guardadas para usarlas sin conexión.
+ * Las URL tienen que ser las mismas que arman las pantallas (son la clave de la caché).
+ */
+export async function prefetchForOffline(qc: QueryClient, role: Role) {
+  const get = (url: string) => qc.prefetchQuery({ queryKey: [url] });
+  await Promise.all([get("/api/students"), get("/api/disciplines"), get("/api/marks?limit=15&offset=0")]);
+  if (!isAdmin(role)) return;
+  if (isSuper(role)) void get("/api/admin/users");
+  const list = qc.getQueryData<{ id: string }[]>(["/api/disciplines"]) ?? [];
+  const first = list[0]?.id;
+  const year = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires", year: "numeric" }).format(new Date());
+  await Promise.all([get("/api/stats/dashboard"), get("/api/stats/records"), get("/api/admin/disciplines"), get(`/api/stats/discipline-cards?course=1ES&schoolYear=${year}`)]);
+  if (!first) return;
+  await Promise.all([
+    get(`/api/stats/evolution?disciplineId=${first}&schoolYear=${year}`),
+    get(`/api/stats/coverage?disciplineId=${first}&schoolYear=${year}`),
+    get(`/api/stats/rankings?disciplineId=${first}&schoolYear=${year}`),
+    get(`/api/stats/rankings?disciplineId=${first}&course=1ES&schoolYear=${year}`),
+    get(`/api/stats/progress?disciplineId=${first}&schoolYear=${year}`),
+  ]);
 }
 
 /** Sin conexión con el servidor (no un error de datos): vale la pena reintentar más tarde. */

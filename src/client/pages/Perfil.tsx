@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import type { MarkRow, Profile } from "@shared/contracts";
+import type { MarkRow, Profile, Student } from "@shared/contracts";
 import { fmtDiff, fmtMark, fmtSigned, fmtValue, isBetter, parseEntry, unitName, type DisciplineDef } from "@shared/domain/marks";
 import { fullName } from "@shared/domain/names";
 import { Avatar, Confirm, Empty, ErrorBox, Icon, Loading, StudentFacts } from "../components/ui";
@@ -9,6 +9,7 @@ import { LineChart } from "../components/LineChart";
 import { api } from "../lib/api";
 import { ddmm, ddmmyyyy, plural } from "../lib/format";
 import { refreshData, useApi, useDisciplines, useMe } from "../lib/hooks";
+import { isOfflineError, useOnline } from "../lib/offline";
 import { isAdmin } from "@shared/domain/roles";
 
 function GoalCard({ studentId, d, best, first, goal, canEdit }: { studentId: string; d: DisciplineDef & { id: string }; best: number | null; first: number | null; goal: number | null; canEdit: boolean }) {
@@ -77,11 +78,34 @@ export function Perfil() {
   const { list, byId } = useDisciplines();
   const { data: me } = useMe();
   const { data, isLoading, error, refetch } = useApi<Profile>(`/api/students/${id}/profile`);
+  const students = useApi<Student[]>("/api/students");
+  const online = useOnline();
   const [toDelete, setToDelete] = useState<MarkRow | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // Sin señal y sin este perfil guardado: se muestra el alumno con lo que hay en el dispositivo y se puede cargarle una marca.
+  const known = students.data?.find((x) => x.id === id);
+  if (!data && known && (!online || isOfflineError(error))) {
+    return (
+      <>
+        <button className="link back" type="button" onClick={() => nav(-1)}><Icon name="back" size={15} />Volver</button>
+        <div className="profile-head">
+          <Avatar p={known} lg />
+          <div className="grow">
+            <h1>{fullName(known)}</h1>
+            <StudentFacts s={known} label />
+          </div>
+          <Link className="btn pri with-icon" to={`/registros/nuevo?mode=one&step=3&student=${known.id}${list[0] ? `&d=${list[0].id}` : ""}`}><Icon name="plus" />Nueva marca</Link>
+        </div>
+        <div className="card">
+          <h2>Sin conexión</h2>
+          <p className="sub">El historial de {known.firstName} todavía no está guardado en este dispositivo: se va a ver cuando vuelva la señal. Igual podés cargarle una marca.</p>
+        </div>
+      </>
+    );
+  }
   if (isLoading) return <Loading />;
-  if (error) return <ErrorBox error={error} retry={() => void refetch()} />;
+  if (error && !data) return <ErrorBox error={error} retry={() => void refetch()} />;
   if (!data) return null;
 
   const s = data.student;

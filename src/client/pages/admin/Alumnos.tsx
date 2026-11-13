@@ -214,7 +214,7 @@ export function Alumnos() {
           <label className="check"><input type="checkbox" checked={inactive} onChange={(e) => setInactive(e.target.checked)} />Incluir dados de baja</label>
         </div>
         {isLoading && <Loading />}
-        {error && <ErrorBox error={error} retry={() => void refetch()} />}
+        {error && !data && <ErrorBox error={error} retry={() => void refetch()} />}
         {data && rows.length === 0 && <Empty title="No hay alumnos con esos filtros" />}
         {rows.length > 0 && (
           <div className="tbl-wrap">

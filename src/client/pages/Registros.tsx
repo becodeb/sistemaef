@@ -98,7 +98,7 @@ export function Registros() {
           <GenderSeg value={gender} onChange={reset(setGender)} />
         </div>
         {isLoading && <Loading />}
-        {error && <ErrorBox error={error} retry={() => void refetch()} />}
+        {error && !data && <ErrorBox error={error} retry={() => void refetch()} />}
         {data && data.marks.length === 0 && <Empty title="Todavía no hay registros con estos filtros">Cuando se carguen marcas, aparecen acá.</Empty>}
         {data && data.marks.length > 0 && (
           <>

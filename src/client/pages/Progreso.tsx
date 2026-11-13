@@ -37,7 +37,7 @@ export function Progreso() {
         <GenderSeg value={gender} onChange={setGender} />
       </div>
       {isLoading && <Loading />}
-      {error && <ErrorBox error={error} retry={() => void refetch()} />}
+      {error && !data && <ErrorBox error={error} retry={() => void refetch()} />}
       {data && d && rows.length === 0 && <div className="card"><Empty title="Todavía no hay marcas con estos filtros" /></div>}
       {data && d && rows.length > 0 && (
         <>

@@ -54,7 +54,7 @@ export function Disciplinas() {
           <span className="muted small">Ordenado de mejor a peor</span>
         </div>
         {table.isLoading && <Loading />}
-        {table.error && <ErrorBox error={table.error} retry={() => void table.refetch()} />}
+        {table.error && !table.data && <ErrorBox error={table.error} retry={() => void table.refetch()} />}
         {table.data && table.data.rows.length === 0 && <Empty title="Todavía no hay marcas para este curso" />}
         {table.data && table.data.rows.length > 0 && d && (
           <div className="tbl-wrap">
