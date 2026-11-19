@@ -4,6 +4,8 @@ import type { Me } from "@shared/contracts";
 import { ApiError, api } from "../lib/api";
 import { setMe } from "../lib/hooks";
 import { PageHead } from "../components/ui";
+// Con el import, el archivo publicado lleva el hash de la imagen: un logo nuevo nunca queda tapado por una caché.
+import logoUrl from "../assets/logo.png";
 
 export function ChangePassword({ forced }: { forced?: boolean }) {
   const [current, setCurrent] = useState("");
@@ -40,7 +42,7 @@ export function ChangePassword({ forced }: { forced?: boolean }) {
     <form className={`card ${forced ? "auth-card" : "narrow"}`} onSubmit={submit}>
       {forced && (
         <>
-          <span className="logo"><img src="/logo.png" alt="RÉCORD · Northfield School" width="400" height="137" /></span>
+          <span className="logo"><img src={logoUrl} alt="RÉCORD · Northfield School" width="400" height="137" /></span>
           <h1 className="auth-title">Elegí tu contraseña</h1>
           <p className="muted">Es tu primer ingreso. Cambiá la contraseña que te dieron por una que solo sepas vos.</p>
         </>

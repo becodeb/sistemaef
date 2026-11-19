@@ -9,7 +9,7 @@ async function precache() {
   if (!res.ok) return;
   const html = await res.clone().text();
   await cache.put("/", res);
-  const urls = new Set(["/logo.png", "/favicon.svg", "/manifest.json", "/icon-192.png", "/icon-512.png"]);
+  const urls = new Set(["/favicon.svg", "/manifest.json", "/icon-192.png", "/icon-512.png"]);
   for (const m of html.matchAll(/(?:src|href)="(\/[^"]+)"/g)) urls.add(m[1]);
   // Las fuentes las pide el CSS: se buscan adentro para tenerlas desde la primera visita.
   for (const url of [...urls].filter((u) => u.endsWith(".css"))) {
