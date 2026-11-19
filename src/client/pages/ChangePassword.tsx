@@ -40,7 +40,7 @@ export function ChangePassword({ forced }: { forced?: boolean }) {
     <form className={`card ${forced ? "auth-card" : "narrow"}`} onSubmit={submit}>
       {forced && (
         <>
-          <span className="logo"><img src="/logo.png" alt="Northfield School" width="400" height="133" /></span>
+          <span className="logo"><img src="/logo.png" alt="RÉCORD · Northfield School" width="400" height="137" /></span>
           <h1 className="auth-title">Elegí tu contraseña</h1>
           <p className="muted">Es tu primer ingreso. Cambiá la contraseña que te dieron por una que solo sepas vos.</p>
         </>

@@ -77,14 +77,14 @@ export function Shell({ me, children }: { me: Me; children: ReactNode }) {
   return (
     <div className="app">
       <aside className="side" aria-label="Menú">
-        <span className="logo"><img src="/logo.png" alt="Northfield School" width="400" height="133" /></span>
+        <span className="logo"><img src="/logo.png" alt="RÉCORD · Northfield School" width="400" height="137" /></span>
         <div className="brand"><b>RÉCORD</b><span>Rendimiento deportivo escolar</span></div>
         {links}
         {account}
       </aside>
       <div className="content">
         <header className="topbar">
-          <span className="logo"><img src="/logo.png" alt="Northfield School" width="400" height="133" /></span>
+          <span className="logo"><img src="/logo.png" alt="RÉCORD · Northfield School" width="400" height="137" /></span>
           <span className="t"><b>RÉCORD</b></span>
           <button className="menu-btn" type="button" aria-expanded={menu} onClick={() => setMenu((m) => !m)}>{menu ? "Cerrar" : "Menú"}</button>
         </header>

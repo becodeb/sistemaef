@@ -24,7 +24,7 @@ export function Login() {
   return (
     <div className="auth">
       <form className="card auth-card" onSubmit={submit}>
-        <span className="logo"><img src="/logo.png" alt="Northfield School" width="400" height="133" /></span>
+        <span className="logo"><img src="/logo.png" alt="RÉCORD · Northfield School" width="400" height="137" /></span>
         <div className="brand"><b>RÉCORD</b><span>Rendimiento deportivo escolar</span></div>
         <div className="field">
           <label className="lbl" htmlFor="username">Usuario</label>
