@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import type { MarkRow, Profile, Student } from "@shared/contracts";
+import type { JumpHistory, MarkRow, Profile, Student } from "@shared/contracts";
+import { heightLines, type JumpResult } from "@shared/domain/heights";
 import { fmtDiff, fmtMark, fmtSigned, fmtValue, isBetter, parseEntry, unitName, type DisciplineDef } from "@shared/domain/marks";
 import { fullName } from "@shared/domain/names";
 import { Avatar, Confirm, Empty, ErrorBox, Icon, Loading, StudentFacts } from "../components/ui";
@@ -67,6 +68,51 @@ function GoalCard({ studentId, d, best, first, goal, canEdit }: { studentId: str
           )}
         </>
       )}
+    </div>
+  );
+}
+
+const TRY_MARK: Record<JumpResult, string> = { cleared: "✓", retry: "✗", out: "✗", absent: "A" };
+const TRY_NAME: Record<JumpResult, string> = { cleared: "saltó", retry: "nulo", out: "nulo", absent: "ausente" };
+const LINE_END: Record<JumpResult, [string, string]> = {
+  cleared: ["Saltó", "s-ok"],
+  retry: ["No terminó", "s-abs"],
+  out: ["Nulo, no siguió", "s-out"],
+  absent: ["Ausente", "s-abs"],
+};
+
+/** Salto en alto por alturas: cada clase con las alturas que intentó, los nulos y los intentos extra. */
+function JumpClasses({ d, jumps }: { d: DisciplineDef; jumps: JumpHistory[] }) {
+  return (
+    <div className="card">
+      <h2>Alturas por clase</h2>
+      <p className="sub">✓ saltó · ✗ nulo · A ausente</p>
+      {jumps.map((j) => {
+        const lines = heightLines(j.attempts.map((a) => ({ ...a, studentId: "" })));
+        const cleared = lines.filter((l) => l.result === "cleared");
+        const best = cleared.length ? cleared[cleared.length - 1]!.height : null;
+        const extra = j.attempts.filter((a) => a.result === "retry").length;
+        const summary = best != null ? `Última altura superada: ${fmtMark(best, d)}` : lines.some((l) => l.result === "absent") ? "Ausente" : `No superó ${fmtMark(lines[0]!.height, d)}`;
+        return (
+          <div className="jump-class" key={j.batchId}>
+            <div className="jc-top">
+              <b className="num">{ddmmyyyy(j.takenOn)}</b>
+              <span>{summary}{extra > 0 ? ` · ${plural(extra, "intento extra", "intentos extra")}` : ""}</span>
+            </div>
+            <ul className="jc-lines">
+              {lines.map((l) => (
+                <li key={l.round}>
+                  <span className="num jc-h">{fmtMark(l.height, d)}</span>
+                  <span className="jc-tries" aria-label={l.tries.map((t) => TRY_NAME[t]).join(", ")}>
+                    {l.tries.map((t, i) => <i key={i} data-r={t}>{TRY_MARK[t]}</i>)}
+                  </span>
+                  <span className={`st-chip ${LINE_END[l.result][1]}`}>{LINE_END[l.result][0]}{l.result === "cleared" && l.tries.length > 1 ? ` (${l.tries.length}.º intento)` : ""}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -181,6 +227,7 @@ export function Perfil() {
           )}
         </div>
         <div className="stack">
+          {d.heights && (pd.jumps?.length ?? 0) > 0 && <JumpClasses d={d} jumps={pd.jumps} />}
           <GoalCard key={`${s.id}${d.id}`} studentId={s.id} d={d} best={best?.value ?? null} first={first?.value ?? null} goal={pd.goal} canEdit={!!me && isAdmin(me.role)} />
           <div className="card">
             <h2>Historial</h2>

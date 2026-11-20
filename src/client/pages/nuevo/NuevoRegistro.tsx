@@ -2,7 +2,9 @@
 // recargar o usar «atrás» en el teléfono no pierde el lugar.
 import { Link, useSearchParams } from "react-router-dom";
 import { todayAR, groupByKey } from "@shared/domain/school";
-import { Icon } from "../../components/ui";
+import { Icon, Loading } from "../../components/ui";
+import { useDisciplines } from "../../lib/hooks";
+import { Alturas } from "./Alturas";
 import { CargaGrupo } from "./CargaGrupo";
 import { CargaIndividual } from "./CargaIndividual";
 import { PasoDos } from "./PasoDos";
@@ -80,7 +82,17 @@ export function NuevoRegistro() {
       </ol>
       {!onThree && <PasoDos wiz={wiz} update={update} ready={ready} />}
       {onThree && wiz.mode === "one" && <CargaIndividual key={`${wiz.student}:${wiz.disciplineId}`} wiz={wiz} update={update} />}
-      {onThree && wiz.mode === "group" && <CargaGrupo key={`${wiz.group}:${wiz.gender}:${wiz.disciplineId}`} wiz={wiz} update={update} />}
+      {onThree && wiz.mode === "group" && <CargaEnGrupo wiz={wiz} update={update} />}
     </div>
   );
+}
+
+/** Salto en alto por alturas va por rondas; el resto, uno por uno o en planilla. */
+function CargaEnGrupo({ wiz, update }: { wiz: Wizard; update: (p: Partial<Wizard>, replace?: boolean) => void }) {
+  const { byId, isLoading } = useDisciplines();
+  const d = byId(wiz.disciplineId);
+  const key = `${wiz.group}:${wiz.gender}:${wiz.disciplineId}`;
+  if (!d && isLoading) return <Loading />;
+  if (d?.heights) return <Alturas key={key} wiz={wiz} update={update} d={d} />;
+  return <CargaGrupo key={key} wiz={wiz} update={update} />;
 }

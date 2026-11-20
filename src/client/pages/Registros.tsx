@@ -7,6 +7,8 @@ import { fullName } from "@shared/domain/names";
 import { Avatar, CourseOptions, DisciplinePick, Empty, ErrorBox, GenderSeg, HouseChip, HouseOptions, Icon, Loading, PageHead, Pick } from "../components/ui";
 import { withQuery } from "../lib/api";
 import { listDrafts } from "../lib/drafts";
+import { listJumps } from "../lib/jumps";
+import { currentHeight, queueOf } from "@shared/domain/heights";
 import { ddmm } from "../lib/format";
 import { useApi, useDisciplines, useMe } from "../lib/hooks";
 
@@ -17,23 +19,33 @@ function SavedDrafts() {
   const { byId } = useDisciplines();
   const nav = useNavigate();
   const drafts = useMemo(() => (me ? listDrafts(me.id) : []), [me]);
-  const rows = drafts.flatMap((r) => {
-    const d = byId(r.disciplineId);
-    const g = groupByKey(r.group);
-    if (!d || !g) return [];
-    const done = Object.values(r.draft.vals).filter((v) => parseEntry(d, v).ok).length;
-    return [{ ...r, d, g, done }];
-  });
+  const jumps = useMemo(() => (me ? listJumps(me.id) : []), [me]);
+  const rows = [
+    ...drafts.flatMap((r) => {
+      const d = byId(r.disciplineId);
+      const g = groupByKey(r.group);
+      if (!d || !g) return [];
+      const done = Object.values(r.draft.vals).filter((v) => parseEntry(d, v).ok).length;
+      return [{ ...r, d, g, date: r.draft.date, detail: `${done} anotados${r.draft.onlyIds ? ` de los ${r.draft.onlyIds.length} que faltaban` : ""}` }];
+    }),
+    ...jumps.flatMap((r) => {
+      const d = byId(r.disciplineId);
+      const g = groupByKey(r.group);
+      if (!d || !g) return [];
+      const left = queueOf(r.draft.session).length;
+      return [{ ...r, d, g, date: r.draft.date, detail: `En ${fmtMark(currentHeight(r.draft.session), d)} · ${left ? `faltan ${left}` : "altura terminada"}` }];
+    }),
+  ];
   if (rows.length === 0) return null;
   return (
     <div className="card">
       <h2>Planillas sin guardar</h2>
-      <p className="sub">Lo que ya anotaste sigue acá, en este dispositivo, hasta que lo guardes.</p>
+      <p className="sub">Lo que ya anotaste sigue acá, en este dispositivo, hasta que lo guardes o termines la clase.</p>
       {rows.map((r) => (
-        <div className="open-row" key={`${r.group}${r.gender}${r.disciplineId}`}>
+        <div className="open-row" key={`${r.detail}${r.group}${r.gender}${r.disciplineId}`}>
           <div>
             <b>{r.g.name}{r.gender ? ` · ${GENDER_NAMES[r.gender]}` : ""} · {r.d.name}</b>
-            <span className="num">{r.done} anotados{r.draft.onlyIds ? ` de los ${r.draft.onlyIds.length} que faltaban` : ""} · {ddmm(r.draft.date)}</span>
+            <span className="num">{r.detail} · {ddmm(r.date)}</span>
           </div>
           <button
             className="btn"
@@ -41,7 +53,7 @@ function SavedDrafts() {
             onClick={() => {
               const q = new URLSearchParams({ mode: "group", step: "3", group: r.group, d: r.disciplineId });
               if (r.gender) q.set("g", r.gender);
-              if (r.draft.date !== todayAR()) q.set("date", r.draft.date);
+              if (r.date !== todayAR()) q.set("date", r.date);
               nav(`/registros/nuevo?${q}`);
             }}
           >

@@ -44,6 +44,16 @@ function Status({ d, raw, best }: { d: Discipline; raw?: string; best?: number }
 
 type Saved = { result: SaveResult; queued: boolean; pending: number; names: Map<string, string> };
 
+/** La lista del grupo con sus mejores marcas. Sin señal y sin esa lista guardada, sale de la lista completa del teléfono. */
+export function useGroupRoster(wiz: Wizard) {
+  const group = groupByKey(wiz.group)!;
+  const rosterQuery = useApi<Roster>(withQuery("/api/roster", { group: wiz.group, gender: wiz.gender, disciplineId: wiz.disciplineId }));
+  const allStudents = useApi<Student[]>("/api/students");
+  const offlineList = !rosterQuery.data && (rosterQuery.fetchStatus === "paused" || isOfflineError(rosterQuery.error)) && !!allStudents.data;
+  const roster = { ...rosterQuery, data: rosterQuery.data ?? (offlineList ? { students: rosterFromStudents(allStudents.data!, group, wiz.gender), courseBest: {} } : undefined) };
+  return { roster, offlineList };
+}
+
 export function CargaGrupo({ wiz, update }: { wiz: Wizard; update: (p: Partial<Wizard>, replace?: boolean) => void }) {
   const { byId } = useDisciplines();
   const { data: me } = useMe();
@@ -51,11 +61,7 @@ export function CargaGrupo({ wiz, update }: { wiz: Wizard; update: (p: Partial<W
   const group = groupByKey(wiz.group)!;
   const ref = useMemo(() => ({ group: wiz.group!, gender: wiz.gender, disciplineId: wiz.disciplineId! }), [wiz.group, wiz.gender, wiz.disciplineId]);
   const userId = me!.id;
-  const rosterQuery = useApi<Roster>(withQuery("/api/roster", { group: wiz.group, gender: wiz.gender, disciplineId: wiz.disciplineId }));
-  const allStudents = useApi<Student[]>("/api/students");
-  // Sin señal y sin esta lista guardada: sale de la lista completa del teléfono, sin mejores marcas.
-  const offlineList = !rosterQuery.data && (rosterQuery.fetchStatus === "paused" || isOfflineError(rosterQuery.error)) && allStudents.data;
-  const roster = { ...rosterQuery, data: rosterQuery.data ?? (offlineList ? { students: rosterFromStudents(allStudents.data!, group, wiz.gender), courseBest: {} } : undefined) };
+  const { roster, offlineList } = useGroupRoster(wiz);
 
   const [draft, setDraft] = useState<Draft>(() => loadDraft(userId, ref) ?? { vals: {}, idx: 0, date: wiz.date });
   const [saved, setSaved] = useState<Saved | null>(null);

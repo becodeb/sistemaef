@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { boolean, date, doublePrecision, index, integer, jsonb, pgTable, primaryKey, smallint, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
+import type { JumpResult } from "@shared/domain/heights";
 import type { Role } from "@shared/domain/roles";
 
 const ts = () => timestamp({ withTimezone: true });
@@ -65,6 +66,8 @@ export const disciplines = pgTable("disciplines", {
   hint: text(),
   icon: text().notNull().default("otra"),
   sort: integer().notNull().default(100),
+  /** Se toma por rondas de alturas (salto en alto): el profe sube la varilla y el sistema filtra a los que pasan. */
+  heights: boolean().notNull().default(false),
   active: boolean().notNull().default(true),
   createdAt: ts().notNull().defaultNow(),
 });
@@ -93,6 +96,30 @@ export const marks = pgTable(
     index("marks_discipline_date").on(t.disciplineId, t.takenOn),
     index("marks_created").on(t.createdAt),
   ],
+);
+
+/**
+ * Cada intento de una clase de salto en alto por alturas. La marca de la clase (en `marks`, mismo `batchId`) es la
+ * altura más alta que superó; esto guarda el detalle: qué alturas intentó, los nulos, los intentos extra y si faltó.
+ */
+export const jumpAttempts = pgTable(
+  "jump_attempts",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    batchId: uuid().notNull(),
+    studentId: uuid().notNull().references(() => students.id, { onDelete: "cascade" }),
+    disciplineId: uuid().notNull().references(() => disciplines.id, { onDelete: "restrict" }),
+    takenOn: date({ mode: "string" }).notNull(),
+    /** Ronda 1 es la altura inicial; cada «Nueva altura» suma una. */
+    round: smallint().notNull(),
+    height: doublePrecision().notNull(),
+    /** Número de intento del alumno en esa altura. */
+    seq: smallint().notNull(),
+    result: text().$type<JumpResult>().notNull(),
+    createdBy: uuid().notNull().references(() => users.id, { onDelete: "restrict" }),
+    createdAt: ts().notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("jump_attempts_key").on(t.batchId, t.studentId, t.round, t.seq), index("jump_attempts_student").on(t.studentId, t.disciplineId)],
 );
 
 export const goals = pgTable(

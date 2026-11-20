@@ -4,6 +4,7 @@
 import { useEffect, useState } from "react";
 import { dehydrate, hydrate, type QueryClient } from "@tanstack/react-query";
 import type { RosterStudent, SaveResult, Student } from "@shared/contracts";
+import { marksFrom, type JumpAttempt } from "@shared/domain/heights";
 import type { Group } from "@shared/domain/school";
 import { isAdmin, isSuper, type Role } from "@shared/domain/roles";
 import { ApiError, api } from "./api";
@@ -100,7 +101,8 @@ export function rosterFromStudents(all: Student[], group: Group, gender: string)
 }
 
 // ---------- Cargas pendientes de envío ----------
-export type MarksBody = { batchId: string; disciplineId: string; takenOn: string; entries: { studentId: string; value: number | null }[] };
+/** `attempts`: salto en alto por alturas; las marcas las calcula el servidor a partir de los intentos. */
+export type MarksBody = { batchId: string; disciplineId: string; takenOn: string; entries: { studentId: string; value: number | null }[]; attempts?: JumpAttempt[] };
 export type Pending = { body: MarksBody; label: string; queuedAt: string; error?: string };
 
 const OUTBOX = (userId: string) => `record:outbox:${userId}`;
@@ -131,8 +133,9 @@ export async function sendMarks(userId: string, body: MarksBody, label: string):
     if (!isOfflineError(err)) throw err;
     const list = readOutbox(userId).filter((p) => p.body.batchId !== body.batchId);
     writeOutbox(userId, [...list, { body, label, queuedAt: new Date().toISOString() }]);
-    const saved = body.entries.filter((e) => e.value != null).length;
-    return { result: { saved, absent: body.entries.length - saved, personalBests: [] }, queued: true };
+    const entries = body.attempts ? marksFrom(body.attempts) : body.entries;
+    const saved = entries.filter((e) => e.value != null).length;
+    return { result: { saved, absent: entries.length - saved, personalBests: [] }, queued: true };
   }
 }
 

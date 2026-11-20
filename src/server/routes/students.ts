@@ -8,7 +8,7 @@ import { db } from "../db/client";
 import { disciplines, goals, students } from "../db/schema";
 import { badRequest, conflict, notFound, readJson } from "../lib/errors";
 import { audit } from "../services/audit";
-import { bestsByStudent, courseBests, getDiscipline, marksOfStudent, toStudent } from "../services/marks";
+import { bestsByStudent, courseBests, getDiscipline, jumpsOfStudent, marksOfStudent, toStudent } from "../services/marks";
 import type { AppEnv } from "../types";
 
 const LIST_ORDER = [asc(students.lastName), asc(students.firstName)];
@@ -36,14 +36,15 @@ export const studentRoutes = new Hono<AppEnv>()
   .get("/:id/profile", async (c) => {
     const user = currentUser(c);
     const s = await studentOr404(c.req.param("id"));
-    const [all, goalRows, list] = await Promise.all([
+    const [all, goalRows, list, jumps] = await Promise.all([
       marksOfStudent(user, s.id),
       db.select().from(goals).where(eq(goals.studentId, s.id)),
       db.select({ id: disciplines.id }).from(disciplines).orderBy(asc(disciplines.sort), asc(disciplines.name)),
+      jumpsOfStudent(s.id),
     ]);
     const body: Profile = {
       student: toStudent(s),
-      disciplines: list.map(({ id }) => ({ disciplineId: id, marks: all.filter((m) => m.disciplineId === id), goal: goalRows.find((g) => g.disciplineId === id)?.target ?? null })),
+      disciplines: list.map(({ id }) => ({ disciplineId: id, marks: all.filter((m) => m.disciplineId === id), goal: goalRows.find((g) => g.disciplineId === id)?.target ?? null, jumps: jumps.filter((j) => j.disciplineId === id).map(({ disciplineId: _, ...j }) => j) })),
     };
     return c.json(body);
   })

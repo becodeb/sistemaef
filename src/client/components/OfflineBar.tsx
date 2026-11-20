@@ -1,5 +1,6 @@
 // Aviso de «sin conexión» y de cargas esperando para enviarse. También dispara el envío automático.
 import { useEffect, useState } from "react";
+import { marksFrom } from "@shared/domain/heights";
 import type { Role } from "@shared/domain/roles";
 import { toast } from "sonner";
 import { ddmm, plural } from "../lib/format";
@@ -7,7 +8,8 @@ import { queryClient, refreshData } from "../lib/hooks";
 import { discardPending, flushOutbox, prefetchForOffline, readOutbox, useOnline, useOutbox, type Pending } from "../lib/offline";
 import { Confirm } from "./ui";
 
-const marksIn = (p: Pending) => p.body.entries.length;
+// Una clase de salto por alturas cuenta una carga por alumno que tiene marca (o ausente).
+const marksIn = (p: Pending) => (p.body.attempts ? marksFrom(p.body.attempts).length : p.body.entries.length);
 
 export function OfflineBar({ userId, role }: { userId: string; role: Role }) {
   const online = useOnline();

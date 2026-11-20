@@ -1,12 +1,13 @@
 // Guardado y lectura de marcas. Las banderas de marca personal se recalculan siempre desde el historial,
 // porque se puede cargar una fecha vieja o borrar una marca.
 import { aliasedTable, and, asc, count, desc, eq, inArray, isNotNull, sql, type SQL } from "drizzle-orm";
-import type { BestByGender, Discipline, MarkRow, NamedBest, RecentPage, SaveResult, Student } from "@shared/contracts";
+import type { BestByGender, Discipline, JumpHistory, MarkRow, NamedBest, RecentPage, SaveResult, Student } from "@shared/contracts";
+import { attemptsError, marksFrom, type JumpAttempt } from "@shared/domain/heights";
 import { isBetter, personalBests, rangeError } from "@shared/domain/marks";
 import { isAdmin } from "@shared/domain/roles";
 import { todayAR } from "@shared/domain/school";
 import { db, type Tx } from "../db/client";
-import { disciplines, marks, students, users } from "../db/schema";
+import { disciplines, jumpAttempts, marks, students, users } from "../db/schema";
 import { badRequest, notFound } from "../lib/errors";
 import type { SessionUser } from "../types";
 
@@ -21,7 +22,7 @@ export const toStudent = (s: typeof students.$inferSelect): Student => ({
 });
 
 export function toDiscipline(d: typeof disciplines.$inferSelect): Discipline {
-  return { id: d.id, name: d.name, what: d.what, kind: d.kind, unit: d.unit, better: d.better, decimals: d.decimals, lo: d.lo, hi: d.hi, example: d.example, hint: d.hint, icon: d.icon, sort: d.sort, active: d.active };
+  return { id: d.id, name: d.name, what: d.what, kind: d.kind, unit: d.unit, better: d.better, decimals: d.decimals, lo: d.lo, hi: d.hi, example: d.example, hint: d.hint, icon: d.icon, sort: d.sort, heights: d.heights, active: d.active };
 }
 
 export async function getDiscipline(id: string): Promise<Discipline> {
@@ -41,10 +42,22 @@ async function recomputePb(tx: Tx, studentId: string, d: Discipline) {
   }
 }
 
-export async function saveMarks(user: SessionUser, body: { batchId: string; disciplineId: string; takenOn: string; entries: { studentId: string; value: number | null }[] }): Promise<SaveResult> {
+async function batchResult(tx: Tx, batchId: string): Promise<SaveResult> {
+  const saved = await tx.select().from(marks).where(eq(marks.batchId, batchId));
+  return {
+    saved: saved.filter((m) => m.value != null).length,
+    absent: saved.filter((m) => m.value == null).length,
+    personalBests: saved.filter((m) => m.isPb).map((m) => ({ studentId: m.studentId, value: m.value!, delta: m.pbDelta! })),
+  };
+}
+
+type SaveBody = { batchId: string; disciplineId: string; takenOn: string; entries: { studentId: string; value: number | null }[]; attempts?: JumpAttempt[] };
+
+export async function saveMarks(user: SessionUser, body: SaveBody): Promise<SaveResult> {
   const d = await getDiscipline(body.disciplineId);
   if (!d.active) throw badRequest("Esta disciplina está desactivada.");
   if (body.takenOn > todayAR()) throw badRequest("La fecha no puede ser futura.", { takenOn: "La fecha no puede ser futura." });
+  if (body.attempts?.length) return saveJumps(user, d, { ...body, attempts: body.attempts });
   const ids = body.entries.map((e) => e.studentId);
   if (new Set(ids).size !== ids.length) throw badRequest("Hay un alumno repetido en el envío.");
   for (const e of body.entries) {
@@ -60,13 +73,63 @@ export async function saveMarks(user: SessionUser, body: { batchId: string; disc
       .values(body.entries.map((e) => ({ studentId: e.studentId, disciplineId: d.id, value: e.value, takenOn: body.takenOn, courseAt: byId.get(e.studentId)!.course, batchId: body.batchId, createdBy: user.id })))
       .onConflictDoNothing();
     for (const id of ids) await recomputePb(tx, id, d);
-    const saved = await tx.select().from(marks).where(eq(marks.batchId, body.batchId));
-    return {
-      saved: saved.filter((m) => m.value != null).length,
-      absent: saved.filter((m) => m.value == null).length,
-      personalBests: saved.filter((m) => m.isPb).map((m) => ({ studentId: m.studentId, value: m.value!, delta: m.pbDelta! })),
-    };
+    return batchResult(tx, body.batchId);
   });
+}
+
+/**
+ * Una clase de salto en alto por alturas. Llega entera cada vez que el profe cambia de altura o termina, así que se
+ * guardan los intentos nuevos (los repetidos se ignoran) y la marca de cada alumno se recalcula desde todo lo guardado:
+ * aunque un envío viejo llegue tarde, la marca nunca baja.
+ */
+async function saveJumps(user: SessionUser, d: Discipline, body: SaveBody & { attempts: JumpAttempt[] }): Promise<SaveResult> {
+  if (!d.heights) throw badRequest("Esta disciplina no se toma por alturas.");
+  const err = attemptsError(body.attempts);
+  if (err) throw badRequest(err);
+  for (const h of new Set(body.attempts.map((a) => a.height))) {
+    const out = rangeError(h, d);
+    if (out) throw badRequest(out);
+  }
+  const ids = [...new Set(body.attempts.map((a) => a.studentId))];
+  return db.transaction(async (tx) => {
+    const found = await tx.select().from(students).where(and(inArray(students.id, ids), eq(students.active, true)));
+    if (found.length !== ids.length) throw badRequest("Hay alumnos que ya no están en la lista. Recargá la página.");
+    const byId = new Map(found.map((s) => [s.id, s]));
+    await tx
+      .insert(jumpAttempts)
+      .values(body.attempts.map((a) => ({ ...a, batchId: body.batchId, disciplineId: d.id, takenOn: body.takenOn, createdBy: user.id })))
+      .onConflictDoNothing();
+    const all = await tx
+      .select({ studentId: jumpAttempts.studentId, round: jumpAttempts.round, height: jumpAttempts.height, seq: jumpAttempts.seq, result: jumpAttempts.result })
+      .from(jumpAttempts)
+      .where(eq(jumpAttempts.batchId, body.batchId));
+    const entries = marksFrom(all).filter((e) => byId.has(e.studentId));
+    if (entries.length) {
+      await tx
+        .insert(marks)
+        .values(entries.map((e) => ({ studentId: e.studentId, disciplineId: d.id, value: e.value, takenOn: body.takenOn, courseAt: byId.get(e.studentId)!.course, batchId: body.batchId, createdBy: user.id })))
+        .onConflictDoUpdate({ target: [marks.batchId, marks.studentId], set: { value: sql`excluded.value` } });
+    }
+    for (const e of entries) await recomputePb(tx, e.studentId, d);
+    return batchResult(tx, body.batchId);
+  });
+}
+
+/** Las clases de salto por alturas de un alumno, de la más nueva a la más vieja. */
+export async function jumpsOfStudent(studentId: string): Promise<(JumpHistory & { disciplineId: string })[]> {
+  const rows = await db
+    .select({ batchId: jumpAttempts.batchId, disciplineId: jumpAttempts.disciplineId, takenOn: jumpAttempts.takenOn, round: jumpAttempts.round, height: jumpAttempts.height, seq: jumpAttempts.seq, result: jumpAttempts.result })
+    .from(jumpAttempts)
+    .where(eq(jumpAttempts.studentId, studentId))
+    .orderBy(desc(jumpAttempts.takenOn), desc(jumpAttempts.createdAt));
+  const out = new Map<string, JumpHistory & { disciplineId: string }>();
+  for (const r of rows) {
+    const cur = out.get(r.batchId) ?? { batchId: r.batchId, disciplineId: r.disciplineId, takenOn: r.takenOn, attempts: [] };
+    cur.attempts.push({ round: r.round, height: r.height, seq: r.seq, result: r.result });
+    out.set(r.batchId, cur);
+  }
+  for (const j of out.values()) j.attempts.sort((a, b) => a.round - b.round || a.seq - b.seq);
+  return [...out.values()];
 }
 
 export async function deleteMark(id: string) {
@@ -74,6 +137,8 @@ export async function deleteMark(id: string) {
   if (!row) throw notFound("La marca");
   await db.transaction(async (tx) => {
     await tx.delete(marks).where(eq(marks.id, id));
+    // Si era de una clase por alturas, se van también sus intentos: si no, un reenvío la volvería a crear.
+    await tx.delete(jumpAttempts).where(and(eq(jumpAttempts.batchId, row.mark.batchId), eq(jumpAttempts.studentId, row.mark.studentId)));
     await recomputePb(tx, row.mark.studentId, toDiscipline(row.discipline));
   });
   return row.mark;

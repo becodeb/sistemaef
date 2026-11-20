@@ -25,13 +25,15 @@ function parseLimit(raw: string, unit: string): number | null {
   return t !== "" && Number.isFinite(n) ? n : null;
 }
 const showLimit = (v: number, d: Discipline) => (d.kind === "ms" ? fmtTime(v) : fmtNumber(v, d.decimals));
+/** Por alturas solo tiene sentido en metros y cuando más alto es mejor (salto en alto). */
+const canHeights = (d: { unit: string; better: string }) => d.unit === "m" && d.better === "hi";
 
 export function DisciplinasAdmin() {
   const { data, isLoading, error, refetch } = useApi<Discipline[]>("/api/admin/disciplines");
-  const [form, setForm] = useState({ name: "", what: "", unit: "m", better: "hi", lo: "", hi: "" });
+  const [form, setForm] = useState({ name: "", what: "", unit: "m", better: "hi", lo: "", hi: "", heights: false });
   const [fields, setFields] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
-  const set = (k: keyof typeof form) => (v: string) => setForm((f) => ({ ...f, [k]: v }));
+  const set = (k: Exclude<keyof typeof form, "heights">) => (v: string) => setForm((f) => ({ ...f, [k]: v }));
 
   const create = async (e: FormEvent) => {
     e.preventDefault();
@@ -44,9 +46,9 @@ export function DisciplinasAdmin() {
       return;
     }
     try {
-      await api.post("/api/admin/disciplines", { name: form.name, what: form.what, unit: form.unit, better: form.better, lo, hi });
+      await api.post("/api/admin/disciplines", { name: form.name, what: form.what, unit: form.unit, better: form.better, lo, hi, heights: form.heights && canHeights(form) });
       toast.success(`Disciplina agregada: ${form.name}`);
-      setForm({ name: "", what: "", unit: "m", better: "hi", lo: "", hi: "" });
+      setForm({ name: "", what: "", unit: "m", better: "hi", lo: "", hi: "", heights: false });
       void refreshData();
     } catch (err) {
       if (err instanceof ApiError && Object.keys(err.fields).length) setFields(err.fields);
@@ -99,6 +101,12 @@ export function DisciplinasAdmin() {
             <input className="inp" id="d-hi" inputMode="decimal" placeholder={form.unit === "min" ? "15:00" : "20"} value={form.hi} onChange={(e) => set("hi")(e.target.value)} required />
             {fields.hi && <p className="form-err">{fields.hi}</p>}
           </div>
+          {canHeights(form) && (
+            <label className="check-line">
+              <input type="checkbox" checked={form.heights} onChange={(e) => setForm((f) => ({ ...f, heights: e.target.checked }))} />
+              <span>En grupo se toma por alturas, como el salto en alto (Saltó, Nulo, Ausente y la varilla sube)</span>
+            </label>
+          )}
           <div className="form-end"><button className="btn pri" type="submit">Agregar</button></div>
         </form>
         {formError && <p className="form-err" role="alert">{formError}</p>}
@@ -111,7 +119,7 @@ export function DisciplinasAdmin() {
         {data && (
           <div className="tbl-wrap">
             <table>
-              <thead><tr><th>Disciplina</th><th>Se mide</th><th>Es mejor</th><th>Rango posible</th><th>Marcas</th><th /></tr></thead>
+              <thead><tr><th>Disciplina</th><th>Se mide</th><th>Es mejor</th><th>Rango posible</th><th>En grupo</th><th>Marcas</th><th /></tr></thead>
               <tbody>
                 {data.map((d) => (
                   <tr key={d.id} className={d.active ? "" : "row-off"}>
@@ -119,8 +127,12 @@ export function DisciplinasAdmin() {
                     <td>{d.what} · {unitName(d)}</td>
                     <td>{d.better === "hi" ? "Más" : "Menos"}</td>
                     <td className="num nowrap">{showLimit(d.lo, d)} a {showLimit(d.hi, d)} {d.unit}</td>
+                    <td>{d.heights ? "Por alturas" : "Uno por uno o planilla"}</td>
                     <td className="num">{d.markCount ?? 0}</td>
-                    <td className="row-actions"><button className="btn small" type="button" onClick={() => void patch(d, { active: !d.active })}>{d.active ? "Desactivar" : "Activar"}</button></td>
+                    <td className="row-actions">
+                      {canHeights(d) && <button className="btn small" type="button" onClick={() => void patch(d, { heights: !d.heights })}>{d.heights ? "Sin alturas" : "Por alturas"}</button>}
+                      <button className="btn small" type="button" onClick={() => void patch(d, { active: !d.active })}>{d.active ? "Desactivar" : "Activar"}</button>
+                    </td>
                   </tr>
                 ))}
               </tbody>

@@ -193,6 +193,71 @@ describe("marcas", () => {
   });
 });
 
+describe("salto en alto por alturas", () => {
+  const at = (studentId: string, round: number, height: number, seq: number, result: string) => ({ studentId, round, height, seq, result });
+  const send = (agent: Parameters<typeof call>[0], d: string, batchId: string, attempts: unknown[]) => call(agent, "POST", "/marks", { batchId, disciplineId: d, takenOn: "2026-05-10", entries: [], attempts });
+
+  it("la marca es la altura más alta superada y sube con cada altura, sin duplicar", async () => {
+    const admin = await newUser("Admin Uno", "admin");
+    const profe = await newUser("Ana Paz");
+    const alto = await disciplineId("Salto en alto");
+    const [a, b, c, d] = [await newStudent(admin, "Ana", "Aguirre"), await newStudent(admin, "Bea", "Bustos"), await newStudent(admin, "Ceci", "Castro"), await newStudent(admin, "Dani", "Díaz")];
+    const batch = randomUUID();
+    const r1 = [at(a, 1, 1.2, 1, "cleared"), at(b, 1, 1.2, 1, "retry"), at(c, 1, 1.2, 1, "out"), at(d, 1, 1.2, 1, "absent"), at(b, 1, 1.2, 2, "cleared")];
+    const first = await send(profe, alto, batch, r1);
+    expect(first.status).toBe(201);
+    expect(first.body).toMatchObject({ saved: 2, absent: 1 });
+
+    const r2 = [...r1, at(a, 2, 1.25, 1, "cleared"), at(b, 2, 1.25, 1, "out")];
+    expect((await send(profe, alto, batch, r2)).body).toMatchObject({ saved: 2, absent: 1 });
+    // Un envío viejo que llega tarde no baja la marca.
+    await send(profe, alto, batch, r1);
+    const page = (await call(admin, "GET", "/marks?limit=50")).body;
+    expect(page.total).toBe(3);
+    expect(page.marks.find((m: any) => m.studentId === a).value).toBe(1.25);
+    expect(page.marks.find((m: any) => m.studentId === b).value).toBe(1.2);
+    expect(page.marks.find((m: any) => m.studentId === d).value).toBeNull();
+    expect(page.marks.some((m: any) => m.studentId === c)).toBe(false);
+
+    const prof = (await call(profe, "GET", `/students/${b}/profile`)).body.disciplines.find((x: any) => x.disciplineId === alto);
+    expect(prof.jumps).toHaveLength(1);
+    expect(prof.jumps[0].attempts.map((x: any) => `${x.height}:${x.result}`)).toEqual(["1.2:retry", "1.2:cleared", "1.25:out"]);
+    const ceci = (await call(profe, "GET", `/students/${c}/profile`)).body.disciplines.find((x: any) => x.disciplineId === alto);
+    expect(ceci.jumps[0].attempts).toEqual([{ round: 1, height: 1.2, seq: 1, result: "out" }]);
+
+    // Borrar la marca se lleva también sus intentos.
+    const markA = page.marks.find((m: any) => m.studentId === a);
+    expect((await call(admin, "DELETE", `/marks/${markA.id}`)).status).toBe(200);
+    expect((await call(admin, "GET", `/students/${a}/profile`)).body.disciplines.find((x: any) => x.disciplineId === alto).jumps).toEqual([]);
+  });
+
+  it("no deja pasar a una altura sin superar la anterior, ni alturas en otras disciplinas", async () => {
+    const admin = await newUser("Admin Uno", "admin");
+    const alto = await disciplineId("Salto en alto");
+    const largo = await disciplineId("Salto en largo");
+    const a = await newStudent(admin, "Ana", "Aguirre");
+    const bad = await send(admin, alto, randomUUID(), [at(a, 1, 1.2, 1, "out"), at(a, 2, 1.25, 1, "cleared")]);
+    expect(bad.status).toBe(400);
+    expect(bad.body.error.message).toContain("sin haber superado");
+    expect((await send(admin, alto, randomUUID(), [at(a, 1, 1.2, 1, "cleared"), at(a, 2, 1.15, 1, "cleared")])).status).toBe(400);
+    expect((await send(admin, alto, randomUUID(), [at(a, 1, 12, 1, "cleared")])).status).toBe(400);
+    expect((await send(admin, largo, randomUUID(), [at(a, 1, 1.2, 1, "cleared")])).status).toBe(400);
+    expect((await call(admin, "POST", "/marks", { batchId: randomUUID(), disciplineId: alto, takenOn: "2026-05-10", entries: [] })).status).toBe(400);
+    // La carga individual de salto en alto sigue igual: se escribe la altura.
+    expect((await save(admin, alto, "2026-05-10", [{ studentId: a, value: 1.3 }])).status).toBe(201);
+  });
+
+  it("solo se marca por alturas una disciplina en metros donde más alto es mejor", async () => {
+    const admin = await newUser("Admin Uno", "admin");
+    const list = (await call(admin, "GET", "/admin/disciplines")).body;
+    expect(list.find((d: any) => d.name === "Salto en alto").heights).toBe(true);
+    expect(list.find((d: any) => d.name === "Salto en largo").heights).toBe(false);
+    const vel = list.find((d: any) => d.name === "Velocidad 50 m");
+    expect((await call(admin, "PATCH", `/admin/disciplines/${vel.id}`, { heights: true })).status).toBe(400);
+    expect((await call(admin, "GET", "/admin/disciplines")).body.find((d: any) => d.id === vel.id).heights).toBe(false);
+  });
+});
+
 describe("grupos y estadísticas", () => {
   async function setup() {
     const admin = await newUser("Admin Uno", "admin");

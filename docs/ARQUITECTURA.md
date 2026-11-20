@@ -57,6 +57,14 @@ tiene usuarios. Tiene que quedar siempre al menos un admin general con acceso.
 - `isPb` y `pbDelta` (marca personal) se **recalculan desde el historial** al guardar y al borrar, porque se puede cargar una fecha vieja.
 - `batchId` identifica cada envío y es único con el alumno: si el teléfono reintenta por mala señal, no se duplica nada.
 - La planilla sin guardar vive en `localStorage` (`client/lib/drafts.ts`), por dispositivo y usuario: la cancha puede no tener señal.
+- **Salto en alto por alturas** (disciplinas con `heights`, solo en metros y «más es mejor»): en carga grupal el profe fija
+  una altura y marca a cada uno Saltó / Nulo (otro intento o no sigue) / Ausente; a la altura siguiente pasan solo los que
+  saltaron. La lógica es pura y compartida (`shared/domain/heights.ts`): la cola sale de la lista de intentos, así deshacer
+  es sacar el último. La clase en curso vive en `localStorage` (`client/lib/jumps.ts`) y se envía **entera** a
+  `POST /api/marks` (campo `attempts`) al cambiar de altura y al terminar; el servidor valida las reglas, guarda los intentos
+  en `jump_attempts` (repetidos se ignoran) y recalcula la marca de la clase (mismo `batchId`) como la altura más alta
+  superada desde todo lo guardado. Quien no superó la altura inicial no tiene marca; quien faltó queda ausente. Borrar la
+  marca borra sus intentos. La carga individual de salto en alto sigue siendo escribir la altura.
 
 ## Sin señal
 

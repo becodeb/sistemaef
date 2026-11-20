@@ -94,6 +94,7 @@ export const adminRoutes = new Hono<AppEnv>()
     if (body.hi <= body.lo) throw badRequest("Revisá los datos ingresados.", { hi: "El máximo tiene que ser mayor que el mínimo." });
     const [dup] = await db.select({ id: disciplines.id }).from(disciplines).where(sql`lower(${disciplines.name}) = lower(${body.name})`).limit(1);
     if (dup) throw conflict("Ya hay una disciplina con ese nombre.");
+    if (body.heights && (body.unit !== "m" || body.better !== "hi")) throw badRequest("Por alturas solo se toman disciplinas en metros donde más alto es mejor.");
     const kind = body.unit === "min" ? "ms" : "dec";
     const decimals = kind === "ms" || body.unit === "rep" || body.unit === "cm" ? 0 : body.unit === "s" ? 2 : 2;
     const mid = (body.lo + body.hi) / 2;
@@ -106,9 +107,14 @@ export const adminRoutes = new Hono<AppEnv>()
     const id = c.req.param("id");
     if (!/^[0-9a-f-]{36}$/i.test(id)) throw notFound("La disciplina");
     const body = await readJson(c, updateDisciplineBody);
-    const [row] = await db.update(disciplines).set(body).where(eq(disciplines.id, id)).returning();
-    if (!row) throw notFound("La disciplina");
-    if (row.hi <= row.lo) throw badRequest("Revisá los datos ingresados.", { hi: "El máximo tiene que ser mayor que el mínimo." });
+    // En una transacción: si lo que queda no es válido, no se guarda nada.
+    const row = await db.transaction(async (tx) => {
+      const [r] = await tx.update(disciplines).set(body).where(eq(disciplines.id, id)).returning();
+      if (!r) throw notFound("La disciplina");
+      if (r.hi <= r.lo) throw badRequest("Revisá los datos ingresados.", { hi: "El máximo tiene que ser mayor que el mínimo." });
+      if (r.heights && (r.unit !== "m" || r.better !== "hi")) throw badRequest("Por alturas solo se toman disciplinas en metros donde más alto es mejor.");
+      return r;
+    });
     await audit(currentUser(c).id, "discipline_updated", id, { fields: Object.keys(body) });
     return c.json(toDiscipline(row));
   });

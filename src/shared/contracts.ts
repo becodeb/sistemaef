@@ -3,6 +3,7 @@ import { z } from "zod";
 import { COURSES, GENDERS, HOUSES } from "./domain/school";
 import { ROLES, type Role } from "./domain/roles";
 import type { DisciplineDef } from "./domain/marks";
+import { JUMP_RESULTS, type JumpResult } from "./domain/heights";
 
 const name = z.string().trim().min(1, "Escribí este dato.").max(80);
 const course = z.string().refine((c) => COURSES.includes(c), "El curso no es válido.");
@@ -42,11 +43,13 @@ export const saveMarksBody = z.object({
   batchId: z.uuid("El envío no es válido."),
   disciplineId: z.uuid("Elegí una disciplina."),
   takenOn: isoDate,
-  entries: z
-    .array(z.object({ studentId: z.uuid(), value: z.number().nullable() }))
-    .min(1, "No hay marcas para guardar.")
-    .max(1000),
-});
+  entries: z.array(z.object({ studentId: z.uuid(), value: z.number().nullable() })).max(1000).default([]),
+  /** Salto en alto por alturas: la clase entera, cada vez que se cambia de altura o se termina. Las marcas salen de acá. */
+  attempts: z
+    .array(z.object({ studentId: z.uuid(), round: z.number().int().min(1).max(60), height: z.number(), seq: z.number().int().min(1).max(50), result: z.enum(JUMP_RESULTS) }))
+    .max(20000)
+    .optional(),
+}).refine((b) => b.entries.length > 0 || (b.attempts?.length ?? 0) > 0, { message: "No hay marcas para guardar.", path: ["entries"] });
 export const goalBody = z.object({ target: z.number().positive("La meta tiene que ser mayor que cero.").nullable() });
 
 export const disciplineBody = z.object({
@@ -57,6 +60,7 @@ export const disciplineBody = z.object({
   lo: z.number().nonnegative("El mínimo no puede ser negativo."),
   hi: z.number().positive("El máximo tiene que ser mayor que cero."),
   hint: z.string().trim().max(160).nullable().optional(),
+  heights: z.boolean().default(false),
 });
 export const updateDisciplineBody = z.object({
   name: name.optional(),
@@ -64,12 +68,14 @@ export const updateDisciplineBody = z.object({
   lo: z.number().nonnegative().optional(),
   hi: z.number().positive().optional(),
   hint: z.string().trim().max(160).nullable().optional(),
+  heights: z.boolean().optional(),
   active: z.boolean().optional(),
 });
 
 // ---------- Respuestas ----------
 export type Me = { id: string; username: string; firstName: string; lastName: string; role: Role; mustChangePassword: boolean };
-export type Discipline = DisciplineDef & { id: string; icon: string; sort: number; active: boolean; markCount?: number };
+/** `heights`: se toma por rondas de alturas (salto en alto). */
+export type Discipline = DisciplineDef & { id: string; icon: string; sort: number; heights: boolean; active: boolean; markCount?: number };
 export type Student = { id: string; firstName: string; lastName: string; course: string; house: string; gender: string | null; active: boolean };
 export type Best = { value: number; takenOn: string };
 export type RosterStudent = Student & { best: Best | null };
@@ -93,7 +99,9 @@ export type RecentPage = { marks: RecentMark[]; total: number };
 export type SaveResult = { saved: number; absent: number; personalBests: { studentId: string; value: number; delta: number }[] };
 
 export type StudentContext = { best: Best | null; courseBest: number | null; marks: MarkRow[]; total: number };
-export type ProfileDiscipline = { disciplineId: string; marks: MarkRow[]; goal: number | null };
+/** Una clase de salto en alto por alturas: todos los intentos del alumno. */
+export type JumpHistory = { batchId: string; takenOn: string; attempts: { round: number; height: number; seq: number; result: JumpResult }[] };
+export type ProfileDiscipline = { disciplineId: string; marks: MarkRow[]; goal: number | null; jumps: JumpHistory[] };
 export type Profile = { student: Student; disciplines: ProfileDiscipline[] };
 
 export type UserRow = { id: string; username: string; firstName: string; lastName: string; role: Role; active: boolean; mustChangePassword: boolean; lastLoginAt: string | null };

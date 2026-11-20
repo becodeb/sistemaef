@@ -2,9 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Me, Student } from "@shared/contracts";
 import { COURSES, GENDER_NAMES, HOUSES, LEVELS, courseLabel, groupByKey, groupKeyOf, todayAR } from "@shared/domain/school";
 import { fullName, matchesName } from "@shared/domain/names";
-import { parseEntry } from "@shared/domain/marks";
+import { fmtMark, parseEntry } from "@shared/domain/marks";
+import { currentHeight } from "@shared/domain/heights";
 import { Avatar, DisciplineTiles, Icon, Loading, StudentFacts } from "../../components/ui";
 import { loadDraft } from "../../lib/drafts";
+import { loadJump } from "../../lib/jumps";
 import { useApi, useDisciplines, useMe } from "../../lib/hooks";
 import { HOUSE_NAMES } from "@shared/domain/school";
 import type { Wizard } from "./NuevoRegistro";
@@ -150,6 +152,7 @@ export function PasoDos({ wiz, update, ready }: Props) {
   const d = byId(wiz.disciplineId);
   const draft = wiz.mode === "group" && ready && d && me ? loadDraft((me as Me).id, { group: wiz.group!, gender: wiz.gender, disciplineId: d.id }) : null;
   const anotados = draft && d ? Object.values(draft.vals).filter((v) => parseEntry(d, v).ok).length : 0;
+  const jump = wiz.mode === "group" && ready && d?.heights && me ? loadJump((me as Me).id, { group: wiz.group!, gender: wiz.gender, disciplineId: d.id }) : null;
 
   const way = (k: Wizard["way"], icon: string, name: string, txt: string) => (
     <button type="button" aria-pressed={wiz.way === k} onClick={() => update({ way: k })}>
@@ -175,18 +178,26 @@ export function PasoDos({ wiz, update, ready }: Props) {
       </div>
       {wiz.mode === "group" && (
         <>
-          <div className="field">
-            <span className="lbl">Forma de carga</span>
-            <div className="disc" role="group" aria-label="Forma de carga">
-              {way("seq", "list", "Uno por uno", "Te muestra un alumno a la vez, en el orden de la lista.")}
-              {way("sheet", "sheet", "Planilla", "Toda la lista a la vista: buscás al alumno y cargás en su fila.")}
+          {d?.heights ? (
+            <div className="field">
+              <span className="lbl">Forma de carga</span>
+              <p className="draft-note heights-note"><b>Por alturas.</b> Elegís la altura inicial y vas marcando a cada uno con Saltó, Nulo o Ausente. Cuando terminan todos, subís la varilla y siguen solo los que la saltaron.</p>
             </div>
-          </div>
+          ) : (
+            <div className="field">
+              <span className="lbl">Forma de carga</span>
+              <div className="disc" role="group" aria-label="Forma de carga">
+                {way("seq", "list", "Uno por uno", "Te muestra un alumno a la vez, en el orden de la lista.")}
+                {way("sheet", "sheet", "Planilla", "Toda la lista a la vista: buscás al alumno y cargás en su fila.")}
+              </div>
+            </div>
+          )}
           <div className="field">
             <label className="lbl" htmlFor="m-date">Fecha</label>
             <input className="date-in" id="m-date" type="date" max={todayAR()} value={wiz.date} onChange={(e) => e.target.value && update({ date: e.target.value })} />
           </div>
-          {anotados > 0 && <p className="draft-note">Esta planilla ya tiene {anotados} anotados sin guardar. Sigue desde ahí.</p>}
+          {anotados > 0 && !d?.heights && <p className="draft-note">Esta planilla ya tiene {anotados} anotados sin guardar. Sigue desde ahí.</p>}
+          {jump && <p className="draft-note">Hay una clase de {d!.name.toLowerCase()} en curso para este grupo, en {fmtMark(currentHeight(jump.session), d!)}. Sigue desde ahí.</p>}
         </>
       )}
       <div className="actions sticky">
