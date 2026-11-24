@@ -11,7 +11,7 @@ import type { Role } from "@shared/domain/roles";
 const app = createApp();
 
 export async function resetDb() {
-  await db.execute(sql`truncate audit_logs, goals, jump_attempts, marks, students, sessions, users, disciplines restart identity cascade`);
+  await db.execute(sql`truncate audit_logs, goals, jump_attempts, marks, promotions, students, sessions, users, disciplines restart identity cascade`);
   await ensureDisciplines();
 }
 

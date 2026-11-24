@@ -4,7 +4,7 @@ import type { Me } from "@shared/contracts";
 import { initials } from "@shared/domain/names";
 import { ROLE_NAMES, isAdmin, isSuper } from "@shared/domain/roles";
 import { api } from "../lib/api";
-import { queryClient, setMe } from "../lib/hooks";
+import { ME, queryClient, setMe } from "../lib/hooks";
 import { clearCache } from "../lib/offline";
 import { OfflineBar } from "./OfflineBar";
 import { Icon } from "./ui";
@@ -33,8 +33,9 @@ export function Shell({ me, children }: { me: Me; children: ReactNode }) {
 
   const logout = async () => {
     await api.post("/api/auth/logout").catch(() => undefined);
-    queryClient.clear();
+    // La consulta de la sesión no se borra: si se borra, App queda mirando una que ya no existe y no muestra el login.
     setMe(null);
+    queryClient.removeQueries({ predicate: (q) => q.queryKey[0] !== ME });
     // Las listas de alumnos no quedan en el teléfono; las cargas sin enviar sí, hasta que vuelva a entrar.
     clearCache();
     nav("/");

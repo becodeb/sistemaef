@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import type { SaveResult, Student, StudentContext } from "@shared/contracts";
 import { fmtMark, hintFor, parseEntry, cleanRaw } from "@shared/domain/marks";
-import { todayAR, courseLabel } from "@shared/domain/school";
+import { todayAR, courseLabel, isGrad } from "@shared/domain/school";
 import { fullName } from "@shared/domain/names";
 import { Avatar, ErrorBox, Icon, Loading, StudentFacts } from "../../components/ui";
 import { ddmm } from "../../lib/format";
@@ -31,6 +31,7 @@ export function CargaIndividual({ wiz, update }: { wiz: Wizard; update: (p: Part
   // Con la lista guardada en el teléfono se sigue aunque el servidor no responda.
   if (students.error && !students.data) return <ErrorBox error={students.error} retry={() => void students.refetch()} />;
   if (!s || !d) return <Loading />;
+  if (isGrad(s)) return <div className="card"><h2>{fullName(s)} está en GRAD TEAM</h2><p className="sub">Ya no se le cargan marcas nuevas. <Link className="link" to={`/estudiantes/${s.id}`}>Ver su perfil y sus récords</Link></p></div>;
 
   const parsed = absent ? { ok: true, absent: true } : parseEntry(d, raw);
 

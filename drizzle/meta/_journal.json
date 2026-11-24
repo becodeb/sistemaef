@@ -15,6 +15,13 @@
       "when": 1795202720041,
       "tag": "0001_alturas",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1795546775671,
+      "tag": "0002_paso_de_anio",
+      "breakpoints": true
     }
   ]
 }

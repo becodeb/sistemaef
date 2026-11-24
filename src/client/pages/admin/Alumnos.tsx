@@ -1,12 +1,13 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import type { ImportResult, Student } from "@shared/contracts";
-import { COURSES, GENDER_ONE, HOUSES, HOUSE_NAMES, courseLabel } from "@shared/domain/school";
+import { COURSES, GENDER_ONE, GRAD, HOUSES, HOUSE_NAMES, courseLabel, isGrad } from "@shared/domain/school";
 import { listName, matchesName } from "@shared/domain/names";
 import { parseRoster, type RosterError, type RosterRow } from "@shared/domain/roster-import";
 import { Confirm, CourseOptions, Empty, ErrorBox, HouseOptions, Icon, Loading, PageHead, Pick } from "../../components/ui";
 import { ApiError, api, withQuery } from "../../lib/api";
 import { refreshData, useApi } from "../../lib/hooks";
+import { PasoDeAnio } from "./PasoDeAnio";
 
 const STEP = 60;
 const ACTIONS = { create: "Nuevo", update: "Cambia", ambiguous: "Revisar", same: "Igual" } as const;
@@ -171,8 +172,9 @@ export function Alumnos() {
   const [toRemove, setToRemove] = useState<Student | null>(null);
   const { data, isLoading, error, refetch } = useApi<Student[]>(withQuery("/api/students", { course, house, gender, inactive: inactive ? 1 : null }));
   const all = useApi<Student[]>("/api/students");
-  const undefinedCount = all.data?.filter((s) => !s.gender).length ?? 0;
-  const rows = useMemo(() => (q.trim() ? (data ?? []).filter((s) => matchesName(s, q)) : (data ?? [])), [data, q]);
+  const undefinedCount = all.data?.filter((s) => !s.gender && !isGrad(s)).length ?? 0;
+  const grads = all.data?.filter(isGrad).length ?? 0;
+  const rows = useMemo(() => (q.trim() ? (data ?? []).filter((s) => matchesName(s, q)) : (data ?? []).filter((s) => course || !isGrad(s))), [data, q, course]);
 
   const patch = async (s: Student, body: Partial<Student>) => {
     try {
@@ -186,9 +188,10 @@ export function Alumnos() {
 
   return (
     <>
-      <PageHead title="Alumnos" sub={all.data ? `${all.data.length} alumnos activos` : undefined} />
+      <PageHead title="Alumnos" sub={all.data ? `${all.data.length - grads} alumnos activos${grads ? ` · ${grads} en GRAD TEAM` : ""}` : undefined} />
       <Importar />
       <NuevoAlumno onDone={() => void refreshData()} />
+      <PasoDeAnio />
       {undefinedCount > 0 && (
         <div className="notice">
           <p><b>{undefinedCount} {undefinedCount === 1 ? "alumno tiene" : "alumnos tienen"} el sexo sin definir.</b> Hasta que lo definas no aparecen en las listas separadas por mujeres y hombres.</p>
@@ -203,7 +206,7 @@ export function Alumnos() {
             <label className="lbl" htmlFor="al-q">Buscar</label>
             <div className="search"><Icon name="search" /><input id="al-q" type="text" autoComplete="off" placeholder="Nombre o apellido" value={q} onChange={(e) => { setQ(e.target.value); setShown(STEP); }} /></div>
           </div>
-          <Pick id="al-course" label="Curso" value={course} onChange={setCourse}><CourseOptions all="Todos" /></Pick>
+          <Pick id="al-course" label="Curso" value={course} onChange={setCourse}><CourseOptions all="Todos" grad /></Pick>
           <Pick id="al-house" label="House" value={house} onChange={setHouse}><HouseOptions all="Todos" /></Pick>
           <Pick id="al-gender" label="Sexo" value={gender} onChange={setGender}>
             <option value="">Todos</option>
@@ -226,7 +229,7 @@ export function Alumnos() {
                     <td>{listName(s)}</td>
                     <td>
                       <select className="sel small" aria-label={`Curso de ${listName(s)}`} value={s.course} onChange={(e) => void patch(s, { course: e.target.value })}>
-                        {COURSES.map((c) => <option key={c} value={c}>{courseLabel(c)}</option>)}
+                        {[...COURSES, GRAD].map((c) => <option key={c} value={c}>{courseLabel(c)}</option>)}
                       </select>
                     </td>
                     <td>

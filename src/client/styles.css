@@ -167,6 +167,12 @@ svg.i { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor;
 .file-btn input { position: absolute; opacity: 0; width: 1px; height: 1px; }
 .file-btn:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
 .preview { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+.promo { list-style: none; margin: 12px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; }
+.promo li { display: grid; grid-template-columns: 52px 16px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 9px 12px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface-2); font-size: 14px; }
+.promo li svg { transform: rotate(180deg); color: var(--faint); }
+.promo li.is-grad { border-color: var(--accent-line); background: var(--accent-soft); }
+.promo li.is-grad b { color: var(--accent); }
+.promo-last { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface-2); font-size: 14px; }
 .preview-list { margin: 12px 0 0; padding-left: 18px; max-height: 240px; overflow-y: auto; }
 
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 42px; padding: 9px 16px; border-radius: var(--r-md); border: 1px solid var(--line-strong); background: var(--surface); font-weight: 600; font-size: 14.5px; text-decoration: none; }
@@ -218,6 +224,12 @@ td.mark { font-weight: 600; }
 .row-off td { opacity: .55; }
 .row-actions { white-space: nowrap; text-align: right; }
 .row-actions .btn + .btn { margin-left: 6px; }
+.c-sel { width: 40px; padding: 0; }
+.c-sel label { display: grid; place-items: center; width: 40px; height: 44px; cursor: pointer; }
+.c-sel input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.row-sel td { background: var(--accent-soft); }
+.sel-bar { position: sticky; bottom: 12px; z-index: 5; display: flex; align-items: center; gap: 8px 14px; flex-wrap: wrap; margin-top: 12px; padding: 10px 12px 10px 16px; border: 1px solid var(--line-strong); border-radius: var(--r-md); background: var(--surface); box-shadow: 0 6px 20px rgba(60, 40, 20, .14); }
+.sel-bar .link { margin-right: auto; }
 .who { display: flex; align-items: center; gap: 10px; }
 .name-btn { border: 0; background: none; padding: 0; font-weight: 500; text-align: left; text-decoration: none; }
 .name-btn:hover { color: var(--accent); text-decoration: underline; }

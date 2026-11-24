@@ -46,7 +46,8 @@ export const students = pgTable(
     updatedAt: ts().notNull().defaultNow(),
   },
   (t) => [
-    uniqueIndex("students_active_name_course").on(t.nameKey, t.course).where(sql`${t.active}`),
+    // En GRAD TEAM se juntan todas las promociones: ahí sí puede haber dos con el mismo nombre.
+    uniqueIndex("students_active_name_course").on(t.nameKey, t.course).where(sql`${t.active} and ${t.course} <> 'GRAD'`),
     index("students_course").on(t.course),
     index("students_house").on(t.house),
   ],
@@ -133,6 +134,16 @@ export const goals = pgTable(
   },
   (t) => [primaryKey({ columns: [t.studentId, t.disciplineId] })],
 );
+
+/** Cada paso de año, con el curso anterior y el nuevo de cada alumno. `effectiveOn` es el día en que se hizo. */
+export const promotions = pgTable("promotions", {
+  id: uuid().primaryKey().defaultRandom(),
+  effectiveOn: date({ mode: "string" }).notNull(),
+  moved: jsonb().$type<{ id: string; from: string; to: string }[]>().notNull(),
+  createdBy: uuid().notNull().references(() => users.id, { onDelete: "restrict" }),
+  createdAt: ts().notNull().defaultNow(),
+  undoneAt: ts(),
+});
 
 export const auditLogs = pgTable("audit_logs", {
   id: uuid().primaryKey().defaultRandom(),

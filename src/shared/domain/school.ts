@@ -14,8 +14,15 @@ export const HOUSE_NAMES: Record<string, string> = { earth: "Earth", wind: "Wind
 export const GENDER_NAMES: Record<string, string> = { m: "Mujeres", h: "Hombres" };
 export const GENDER_ONE: Record<string, string> = { m: "Mujer", h: "Hombre" };
 
+/** Los egresados. No es un curso más: no aparece para cargar marcas y sus alumnos solo conservan lo que hicieron. */
+export const GRAD = "GRAD";
+export const isGrad = (s: { course: string }) => s.course === GRAD;
+
+/** El paso de año, de 1.º de primaria hacia arriba: 6EP pasa a 1ES y 6ES a GRAD TEAM. */
+export const PROMOTION = COURSES.map((from, i) => ({ from, to: COURSES[i + 1] ?? GRAD }));
+
 /** 6ES pasa a «6.º ES». */
-export const courseLabel = (course: string) => `${course[0]}.º ${course.slice(1)}`;
+export const courseLabel = (course: string) => (course === GRAD ? "GRAD TEAM" : `${course[0]}.º ${course.slice(1)}`);
 /** 6ES pasa a «6.º año de secundaria». */
 export function courseName(course: string): string {
   const level = LEVELS.find((l) => l.key === course.slice(1));

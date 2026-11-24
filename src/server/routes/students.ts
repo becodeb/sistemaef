@@ -1,7 +1,7 @@
 import { Hono } from "hono";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, ne, sql } from "drizzle-orm";
 import { goalBody, importBody, studentBody, updateStudentBody, type ImportResult, type ImportRowResult, type Profile, type Roster, type StudentContext } from "@shared/contracts";
-import { groupByKey } from "@shared/domain/school";
+import { GRAD, groupByKey, isGrad } from "@shared/domain/school";
 import { nameKey } from "@shared/domain/names";
 import { currentUser, requireAdmin } from "../auth";
 import { db } from "../db/client";
@@ -83,7 +83,7 @@ export const studentRoutes = new Hono<AppEnv>()
     const body = await readJson(c, updateStudentBody);
     const next = { ...s, ...body };
     const key = nameKey(`${next.firstName} ${next.lastName}`);
-    if (next.active) {
+    if (next.active && !isGrad(next)) {
       const [dup] = await db.select({ id: students.id }).from(students).where(and(eq(students.nameKey, key), eq(students.course, next.course), eq(students.active, true), sql`${students.id} <> ${s.id}`)).limit(1);
       if (dup) throw conflict("Ya hay un alumno con ese nombre en ese curso.");
     }
@@ -95,7 +95,9 @@ export const studentRoutes = new Hono<AppEnv>()
     const { rows, dryRun } = await readJson(c, importBody);
     const existing = await db.select().from(students).where(eq(students.active, true));
     const byKey = new Map<string, (typeof existing)[number][]>();
-    for (const s of existing) byKey.set(s.nameKey, [...(byKey.get(s.nameKey) ?? []), s]);
+    // Un egresado no vuelve a un curso por una lista: puede ser un chico nuevo con el mismo nombre.
+    for (const s of existing) if (!isGrad(s)) byKey.set(s.nameKey, [...(byKey.get(s.nameKey) ?? []), s]);
+    const gradKeys = new Set(existing.filter(isGrad).map((s) => s.nameKey));
 
     const results: ImportRowResult[] = [];
     const inserts: (typeof students.$inferInsert)[] = [];
@@ -114,6 +116,8 @@ export const studentRoutes = new Hono<AppEnv>()
       const match = same.length === 1 ? same[0] : same.find((s) => s.course === r.course);
       if (!match && same.length > 1) {
         results.push({ line: r.line, action: "ambiguous", name, detail: `Hay ${same.length} alumnos con ese nombre y ninguno en ${r.course}.` });
+      } else if (!match && gradKeys.has(key)) {
+        results.push({ line: r.line, action: "ambiguous", name, detail: "Hay un egresado con ese nombre en GRAD TEAM. Si es otra persona, agregalo a mano." });
       } else if (!match) {
         inserts.push({ firstName: r.firstName, lastName: r.lastName, nameKey: key, course: r.course, house: r.house, gender: r.gender });
         results.push({ line: r.line, action: "create", name });
@@ -147,7 +151,7 @@ export const rosterRoutes = new Hono<AppEnv>().get("/", async (c) => {
   const rows = await db
     .select()
     .from(students)
-    .where(and(eq(students.active, true), group.course ? eq(students.course, group.course) : undefined, group.house ? eq(students.house, group.house) : undefined, genderCond(gender)))
+    .where(and(eq(students.active, true), ne(students.course, GRAD), group.course ? eq(students.course, group.course) : undefined, group.house ? eq(students.house, group.house) : undefined, genderCond(gender)))
     .orderBy(...LIST_ORDER);
   const [bests, courseBest] = await Promise.all([bestsByStudent(d), courseBests(d)]);
   const body: Roster = { students: rows.map((s) => ({ ...toStudent(s), best: bests.get(s.id) ?? null })), courseBest };

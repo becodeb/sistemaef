@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import type { Student } from "@shared/contracts";
-import { GENDER_ONE, HOUSE_NAMES, courseLabel } from "@shared/domain/school";
+import { GENDER_ONE, HOUSE_NAMES, courseLabel, isGrad } from "@shared/domain/school";
 import { fullName, listName, matchesName } from "@shared/domain/names";
 import { isAdmin } from "@shared/domain/roles";
 import { Avatar, CourseOptions, Empty, ErrorBox, GenderSeg, HouseChip, HouseOptions, Icon, Loading, PageHead, Pick } from "../components/ui";
@@ -20,7 +20,8 @@ export function Estudiantes() {
   const [gender, setGender] = useState("");
   const [shown, setShown] = useState(STEP);
   const { data, isLoading, error, refetch } = useApi<Student[]>(withQuery("/api/students", { course, house, gender }));
-  const rows = useMemo(() => (q.trim() ? (data ?? []).filter((s) => matchesName(s, q, `${s.course} ${HOUSE_NAMES[s.house]}`)) : (data ?? [])), [data, q]);
+  // Los egresados se ven al elegir GRAD TEAM o al buscarlos; si no, la lista es de los que están en el colegio.
+  const rows = useMemo(() => (q.trim() ? (data ?? []).filter((s) => matchesName(s, q, `${s.course} ${HOUSE_NAMES[s.house]}`)) : (data ?? []).filter((s) => course || !isGrad(s))), [data, q, course]);
 
   return (
     <>
@@ -35,7 +36,7 @@ export function Estudiantes() {
             <label className="lbl" htmlFor="est-q">Buscar</label>
             <div className="search"><Icon name="search" /><input id="est-q" type="text" autoComplete="off" placeholder="Nombre, apellido o curso" value={q} onChange={(e) => { setQ(e.target.value); setShown(STEP); }} /></div>
           </div>
-          <Pick id="est-course" label="Curso" value={course} onChange={setCourse}><CourseOptions all="Todos" /></Pick>
+          <Pick id="est-course" label="Curso" value={course} onChange={setCourse}><CourseOptions all="Todos" grad /></Pick>
           <Pick id="est-house" label="House" value={house} onChange={setHouse}><HouseOptions all="Todos" /></Pick>
           <GenderSeg value={gender} onChange={setGender} />
         </div>

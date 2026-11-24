@@ -1,7 +1,7 @@
 import { Hono } from "hono";
-import { and, asc, count, eq, isNotNull, sql } from "drizzle-orm";
+import { and, asc, count, eq, isNotNull, ne, sql } from "drizzle-orm";
 import type { Coverage, Dashboard, DisciplineCards, Evolution, HistoricRecords, Progress, Rankings } from "@shared/contracts";
-import { COURSES, todayAR } from "@shared/domain/school";
+import { COURSES, GRAD, todayAR } from "@shared/domain/school";
 import { isBetter } from "@shared/domain/marks";
 import { requireAdmin } from "../auth";
 import { db } from "../db/client";
@@ -28,7 +28,7 @@ export const statsRoutes = new Hono<AppEnv>()
     const list = await activeDisciplines();
     const [all, [studentRow], years, highlights] = await Promise.all([
       loadMarks({ schoolYear }),
-      db.select({ n: count() }).from(students).where(eq(students.active, true)),
+      db.select({ n: count() }).from(students).where(and(eq(students.active, true), ne(students.course, GRAD))),
       schoolYears(),
       db
         .select({ student: students, disciplineId: marks.disciplineId, value: marks.value, delta: marks.pbDelta, takenOn: marks.takenOn })

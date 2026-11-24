@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { dehydrate, hydrate, type QueryClient } from "@tanstack/react-query";
 import type { RosterStudent, SaveResult, Student } from "@shared/contracts";
 import { marksFrom, type JumpAttempt } from "@shared/domain/heights";
-import type { Group } from "@shared/domain/school";
+import { isGrad, type Group } from "@shared/domain/school";
 import { isAdmin, isSuper, type Role } from "@shared/domain/roles";
 import { ApiError, api } from "./api";
 
@@ -95,7 +95,7 @@ export const isOfflineError = (err: unknown) => err instanceof ApiError && (err.
 /** Sin señal y sin la lista del grupo guardada: se arma con la lista completa de alumnos, sin mejores marcas. */
 export function rosterFromStudents(all: Student[], group: Group, gender: string): RosterStudent[] {
   return all
-    .filter((s) => s.active && (!group.course || s.course === group.course) && (!group.house || s.house === group.house) && (!gender || s.gender === gender))
+    .filter((s) => s.active && !isGrad(s) && (!group.course || s.course === group.course) && (!group.house || s.house === group.house) && (!gender || s.gender === gender))
     .sort((a, b) => a.lastName.localeCompare(b.lastName, "es") || a.firstName.localeCompare(b.firstName, "es"))
     .map((s) => ({ ...s, best: null }));
 }

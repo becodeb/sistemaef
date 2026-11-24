@@ -1,15 +1,17 @@
 // Guardado y lectura de marcas. Las banderas de marca personal se recalculan siempre desde el historial,
 // porque se puede cargar una fecha vieja o borrar una marca.
-import { aliasedTable, and, asc, count, desc, eq, inArray, isNotNull, sql, type SQL } from "drizzle-orm";
-import type { BestByGender, Discipline, JumpHistory, MarkRow, NamedBest, RecentPage, SaveResult, Student } from "@shared/contracts";
+import { aliasedTable, and, asc, count, desc, eq, exists, inArray, isNotNull, sql, type SQL } from "drizzle-orm";
+import { MAX_DELETE, type BestByGender, type Discipline, type JumpHistory, type MarkRow, type NamedBest, type RecentPage, type SaveResult, type Student } from "@shared/contracts";
 import { attemptsError, marksFrom, type JumpAttempt } from "@shared/domain/heights";
 import { isBetter, personalBests, rangeError } from "@shared/domain/marks";
 import { isAdmin } from "@shared/domain/roles";
-import { todayAR } from "@shared/domain/school";
+import { fullName } from "@shared/domain/names";
+import { GRAD, todayAR } from "@shared/domain/school";
 import { db, type Tx } from "../db/client";
 import { disciplines, jumpAttempts, marks, students, users } from "../db/schema";
 import { badRequest, notFound } from "../lib/errors";
 import type { SessionUser } from "../types";
+import { coursesOn } from "./promotion";
 
 export const toStudent = (s: typeof students.$inferSelect): Student => ({
   id: s.id,
@@ -51,6 +53,14 @@ async function batchResult(tx: Tx, batchId: string): Promise<SaveResult> {
   };
 }
 
+/** El curso que tenía cada uno al tomarse la marca. A quien ya había egresado no se le cargan marcas. */
+async function coursesForMarks(tx: Tx, list: (typeof students.$inferSelect)[], takenOn: string) {
+  const courses = await coursesOn(tx, list, takenOn);
+  const grad = list.find((s) => courses.get(s.id) === GRAD);
+  if (grad) throw badRequest(`${fullName(grad)} está en GRAD TEAM: ya no se le pueden cargar marcas nuevas.`);
+  return courses;
+}
+
 type SaveBody = { batchId: string; disciplineId: string; takenOn: string; entries: { studentId: string; value: number | null }[]; attempts?: JumpAttempt[] };
 
 export async function saveMarks(user: SessionUser, body: SaveBody): Promise<SaveResult> {
@@ -67,10 +77,10 @@ export async function saveMarks(user: SessionUser, body: SaveBody): Promise<Save
   return db.transaction(async (tx) => {
     const found = await tx.select().from(students).where(and(inArray(students.id, ids), eq(students.active, true)));
     if (found.length !== ids.length) throw badRequest("Hay alumnos que ya no están en la lista. Recargá la página.");
-    const byId = new Map(found.map((s) => [s.id, s]));
+    const courses = await coursesForMarks(tx, found, body.takenOn);
     await tx
       .insert(marks)
-      .values(body.entries.map((e) => ({ studentId: e.studentId, disciplineId: d.id, value: e.value, takenOn: body.takenOn, courseAt: byId.get(e.studentId)!.course, batchId: body.batchId, createdBy: user.id })))
+      .values(body.entries.map((e) => ({ studentId: e.studentId, disciplineId: d.id, value: e.value, takenOn: body.takenOn, courseAt: courses.get(e.studentId)!, batchId: body.batchId, createdBy: user.id })))
       .onConflictDoNothing();
     for (const id of ids) await recomputePb(tx, id, d);
     return batchResult(tx, body.batchId);
@@ -94,7 +104,7 @@ async function saveJumps(user: SessionUser, d: Discipline, body: SaveBody & { at
   return db.transaction(async (tx) => {
     const found = await tx.select().from(students).where(and(inArray(students.id, ids), eq(students.active, true)));
     if (found.length !== ids.length) throw badRequest("Hay alumnos que ya no están en la lista. Recargá la página.");
-    const byId = new Map(found.map((s) => [s.id, s]));
+    const courses = await coursesForMarks(tx, found, body.takenOn);
     await tx
       .insert(jumpAttempts)
       .values(body.attempts.map((a) => ({ ...a, batchId: body.batchId, disciplineId: d.id, takenOn: body.takenOn, createdBy: user.id })))
@@ -103,11 +113,11 @@ async function saveJumps(user: SessionUser, d: Discipline, body: SaveBody & { at
       .select({ studentId: jumpAttempts.studentId, round: jumpAttempts.round, height: jumpAttempts.height, seq: jumpAttempts.seq, result: jumpAttempts.result })
       .from(jumpAttempts)
       .where(eq(jumpAttempts.batchId, body.batchId));
-    const entries = marksFrom(all).filter((e) => byId.has(e.studentId));
+    const entries = marksFrom(all).filter((e) => courses.has(e.studentId));
     if (entries.length) {
       await tx
         .insert(marks)
-        .values(entries.map((e) => ({ studentId: e.studentId, disciplineId: d.id, value: e.value, takenOn: body.takenOn, courseAt: byId.get(e.studentId)!.course, batchId: body.batchId, createdBy: user.id })))
+        .values(entries.map((e) => ({ studentId: e.studentId, disciplineId: d.id, value: e.value, takenOn: body.takenOn, courseAt: courses.get(e.studentId)!, batchId: body.batchId, createdBy: user.id })))
         .onConflictDoUpdate({ target: [marks.batchId, marks.studentId], set: { value: sql`excluded.value` } });
     }
     for (const e of entries) await recomputePb(tx, e.studentId, d);
@@ -132,16 +142,32 @@ export async function jumpsOfStudent(studentId: string): Promise<(JumpHistory & 
   return [...out.values()];
 }
 
-export async function deleteMark(id: string) {
-  const [row] = await db.select({ mark: marks, discipline: disciplines }).from(marks).innerJoin(disciplines, eq(disciplines.id, marks.disciplineId)).where(eq(marks.id, id)).limit(1);
-  if (!row) throw notFound("La marca");
-  await db.transaction(async (tx) => {
-    await tx.delete(marks).where(eq(marks.id, id));
-    // Si era de una clase por alturas, se van también sus intentos: si no, un reenvío la volvería a crear.
-    await tx.delete(jumpAttempts).where(and(eq(jumpAttempts.batchId, row.mark.batchId), eq(jumpAttempts.studentId, row.mark.studentId)));
-    await recomputePb(tx, row.mark.studentId, toDiscipline(row.discipline));
+/** Borra marcas y recalcula las marcas personales de cada alumno. Las que ya no existen (las borró otro) se saltean. */
+export async function deleteMarks(ids: string[]) {
+  return db.transaction(async (tx) => {
+    // Si eran de una clase por alturas, se van también sus intentos: si no, un reenvío las volvería a crear.
+    await tx.delete(jumpAttempts).where(
+      exists(
+        tx
+          .select({ id: marks.id })
+          .from(marks)
+          .where(and(inArray(marks.id, ids), eq(marks.batchId, jumpAttempts.batchId), eq(marks.studentId, jumpAttempts.studentId))),
+      ),
+    );
+    const deleted = await tx.delete(marks).where(inArray(marks.id, ids)).returning();
+    if (deleted.length === 0) return deleted;
+    const used = await tx.select().from(disciplines).where(inArray(disciplines.id, [...new Set(deleted.map((m) => m.disciplineId))]));
+    const byId = new Map(used.map((d) => [d.id, toDiscipline(d)]));
+    const pairs = new Map(deleted.map((m) => [`${m.studentId}:${m.disciplineId}`, m]));
+    for (const m of pairs.values()) await recomputePb(tx, m.studentId, byId.get(m.disciplineId)!);
+    return deleted;
   });
-  return row.mark;
+}
+
+export async function deleteMark(id: string) {
+  const [mark] = await deleteMarks([id]);
+  if (!mark) throw notFound("La marca");
+  return mark;
 }
 
 const author = aliasedTable(users, "author");
@@ -173,13 +199,31 @@ export async function marksOfStudent(user: SessionUser, studentId: string, disci
   return rows.map((m) => present(m, user));
 }
 
-export async function recentMarks(user: SessionUser, filter: { disciplineId?: string; course?: string; house?: string; gender?: string; limit: number; offset: number }): Promise<RecentPage> {
+type MarkFilter = { disciplineId?: string; course?: string; house?: string; gender?: string };
+
+function filterCond(filter: MarkFilter): SQL | undefined {
   const where: SQL[] = [];
   if (filter.disciplineId) where.push(eq(marks.disciplineId, filter.disciplineId));
   if (filter.course) where.push(eq(marks.courseAt, filter.course));
   if (filter.house) where.push(eq(students.house, filter.house));
   if (filter.gender) where.push(eq(students.gender, filter.gender));
-  const cond = where.length ? and(...where) : undefined;
+  return where.length ? and(...where) : undefined;
+}
+
+/** Los ids de todos los registros que coinciden, para elegirlos de una vez. Mismo orden que la lista. */
+export async function markIds(filter: MarkFilter): Promise<string[]> {
+  const rows = await db
+    .select({ id: marks.id })
+    .from(marks)
+    .innerJoin(students, eq(students.id, marks.studentId))
+    .where(filterCond(filter))
+    .orderBy(desc(marks.createdAt), desc(marks.id))
+    .limit(MAX_DELETE);
+  return rows.map((r) => r.id);
+}
+
+export async function recentMarks(user: SessionUser, filter: MarkFilter & { limit: number; offset: number }): Promise<RecentPage> {
+  const cond = filterCond(filter);
   const [{ total }] = (await db.select({ total: count() }).from(marks).innerJoin(students, eq(students.id, marks.studentId)).where(cond)) as [{ total: number }];
   const rows = await db
     .select({ ...markFields, student: students })

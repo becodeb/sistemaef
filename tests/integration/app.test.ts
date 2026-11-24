@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
+import { db } from "@server/db/client";
 import { anon, call, disciplineId, newStudent, newUser, save } from "./helpers";
 
 describe("acceso", () => {
@@ -190,6 +192,163 @@ describe("marcas", () => {
     expect((await call(profe, "DELETE", `/marks/${mark.id}`)).status).toBe(403);
     expect((await call(admin, "GET", "/marks")).body.marks[0].canDelete).toBe(true);
     expect((await call(admin, "DELETE", `/marks/${mark.id}`)).status).toBe(200);
+  });
+
+  it("borra varias de una vez, recalcula marcas personales y deja el resto", async () => {
+    const admin = await newUser("Admin Uno", "admin");
+    const profe = await newUser("Ana Paz");
+    const [vel, alto] = [await disciplineId("Velocidad 50 m"), await disciplineId("Salto en alto")];
+    const [a, b] = [await newStudent(admin, "Ana", "Aguirre"), await newStudent(admin, "Bea", "Bustos", "5ES")];
+    await save(profe, vel, "2026-03-01", [{ studentId: a, value: 8 }, { studentId: b, value: 9 }]);
+    await save(profe, vel, "2026-04-01", [{ studentId: a, value: 7.5 }, { studentId: b, value: 8.5 }]);
+    await save(profe, vel, "2026-05-01", [{ studentId: a, value: 7.8 }]);
+    const jump = (id: string) => ({ studentId: id, round: 1, height: 1.2, seq: 1, result: "cleared" });
+    await call(profe, "POST", "/marks", { batchId: randomUUID(), disciplineId: alto, takenOn: "2026-05-10", entries: [], attempts: [jump(a), jump(b)] });
+    const page = async () => (await call(admin, "GET", "/marks?limit=50")).body;
+    const before = (await page()).marks as any[];
+    const find = (s: string, v: number) => before.find((m) => m.studentId === s && m.value === v).id as string;
+
+    // Los ids siguen los filtros de la lista.
+    expect((await call(admin, "GET", "/marks/ids")).body.ids).toEqual(before.map((m) => m.id));
+    expect((await call(admin, "GET", `/marks/ids?course=5ES&disciplineId=${vel}`)).body.ids).toHaveLength(2);
+
+    // Solo admins, y con una lista válida.
+    const ids = [find(a, 7.5), find(b, 8.5), find(a, 1.2)];
+    expect((await call(profe, "GET", "/marks/ids")).status).toBe(403);
+    expect((await call(profe, "POST", "/marks/delete", { ids })).status).toBe(403);
+    for (const bad of [{}, { ids: [] }, { ids: ["x"] }, { ids: Array(1001).fill(ids[0]) }]) expect((await call(admin, "POST", "/marks/delete", bad)).status).toBe(400);
+    expect((await page()).total).toBe(7);
+
+    // Un id que ya no existe se saltea.
+    expect((await call(admin, "POST", "/marks/delete", { ids: [...ids, randomUUID()] })).body).toEqual({ deleted: 3 });
+    const after = await page();
+    expect(after.total).toBe(4);
+    expect(after.marks.find((m: any) => m.studentId === a && m.value === 7.8)).toMatchObject({ isPb: true });
+    const jumps = async (s: string) => (await call(admin, "GET", `/students/${s}/profile`)).body.disciplines.find((x: any) => x.disciplineId === alto)?.jumps ?? [];
+    expect(await jumps(a)).toEqual([]);
+    expect(await jumps(b)).toHaveLength(1);
+    expect((await call(admin, "POST", "/marks/delete", { ids })).body).toEqual({ deleted: 0 });
+  });
+});
+
+describe("paso de año", () => {
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Argentina/Buenos_Aires" });
+  const courseOf = async (agent: Parameters<typeof call>[0], id: string) => (await call(agent, "GET", `/students/${id}/profile`)).body.student.course;
+  /** Corre la fecha del último paso hacia atrás, como si hubiera pasado el tiempo. */
+  const age = (days: number) => db.execute(sql`update promotions set created_at = created_at - make_interval(days => ${days}), effective_on = effective_on - ${days}::int`);
+
+  it("todos suben un curso, 6.º ES egresa y no se puede repetir enseguida", async () => {
+    const admin = await newUser("Admin Uno", "admin");
+    const profe = await newUser("Ana Paz");
+    // Dos con el mismo nombre en cursos seguidos: no tiene que chocar a mitad de camino.
+    const [a, b] = [await newStudent(admin, "Juan", "Pérez", "5ES"), await newStudent(admin, "Juan", "Pérez", "6ES")];
+    const [c, d, e] = [await newStudent(admin, "Ceci", "Castro", "6EP"), await newStudent(admin, "Dani", "Díaz", "1EP"), await newStudent(admin, "Eva", "Ema", "3EP")];
+    await call(admin, "PATCH", `/students/${e}`, { active: false });
+
+    for (const [m, u] of [["GET", ""], ["POST", ""], ["POST", `/${randomUUID()}/undo`]] as const) expect((await call(profe, m, `/admin/promotion${u}`)).status).toBe(403);
+    const before = (await call(admin, "GET", "/admin/promotion")).body;
+    expect(before).toMatchObject({ ready: true, last: null, graduates: 0 });
+    expect(before.steps.find((s: any) => s.from === "6ES")).toEqual({ from: "6ES", to: "GRAD", students: 1 });
+
+    const done = await call(admin, "POST", "/admin/promotion");
+    expect(done.status).toBe(201);
+    expect(done.body).toEqual({ moved: 4, graduated: 1 });
+    expect(await Promise.all([a, b, c, d, e].map((id) => courseOf(admin, id)))).toEqual(["6ES", "GRAD", "1ES", "2EP", "3EP"]);
+
+    // Un doble clic no sube dos cursos.
+    expect((await call(admin, "POST", "/admin/promotion")).status).toBe(409);
+    expect(await courseOf(admin, d)).toBe("2EP");
+    expect((await call(admin, "GET", "/admin/promotion")).body).toMatchObject({ ready: false, graduates: 1, last: { moved: 4, graduated: 1, byName: "Admin Uno", canUndo: true } });
+
+    // Al año siguiente sí, y en GRAD TEAM se juntan dos con el mismo nombre.
+    await age(300);
+    expect((await call(admin, "GET", "/admin/promotion")).body.last.canUndo).toBe(false);
+    expect((await call(admin, "POST", "/admin/promotion")).body).toEqual({ moved: 3, graduated: 1 });
+    expect(await Promise.all([a, b, c, d].map((id) => courseOf(admin, id)))).toEqual(["GRAD", "GRAD", "2ES", "3EP"]);
+  });
+
+  it("a GRAD TEAM no se le cargan marcas, pero conserva las suyas y sigue en los rankings", async () => {
+    const admin = await newUser("Admin Uno", "admin");
+    const profe = await newUser("Ana Paz");
+    const [vel, alto] = [await disciplineId("Velocidad 50 m"), await disciplineId("Salto en alto")];
+    const [g, s] = [await newStudent(admin, "Gina", "Gómez", "6ES"), await newStudent(admin, "Sol", "Sosa", "5ES")];
+    await save(profe, vel, "2026-04-01", [{ studentId: g, value: 7 }]);
+    await call(admin, "POST", "/admin/promotion");
+
+    const res = await save(profe, vel, today, [{ studentId: g, value: 6.9 }]);
+    expect(res.status).toBe(400);
+    expect(res.body.error.message).toContain("Gina Gómez está en GRAD TEAM");
+    const jump = await call(profe, "POST", "/marks", { batchId: randomUUID(), disciplineId: alto, takenOn: today, entries: [], attempts: [{ studentId: g, round: 1, height: 1.2, seq: 1, result: "cleared" }] });
+    expect(jump.status).toBe(400);
+    // No está en ninguna lista para cargar.
+    expect((await call(profe, "GET", `/roster?group=h:earth&disciplineId=${vel}`)).body.students.map((x: any) => x.id)).toEqual([s]);
+    expect((await call(profe, "GET", `/roster?group=c:GRAD&disciplineId=${vel}`)).status).toBe(400);
+    expect((await call(admin, "GET", "/stats/dashboard")).body.students).toBe(1);
+
+    const profile = (await call(profe, "GET", `/students/${g}/profile`)).body;
+    expect(profile.student.course).toBe("GRAD");
+    expect(profile.disciplines.find((x: any) => x.disciplineId === vel).marks).toHaveLength(1);
+    const rank = (await call(admin, "GET", `/stats/rankings?disciplineId=${vel}&schoolYear=2026&course=6ES`)).body.rows;
+    expect(rank[0]).toMatchObject({ value: 7, courseAt: "6ES", student: { id: g } });
+
+    // La lista importada no saca a nadie de GRAD TEAM, ni crea un duplicado.
+    const imp = await call(admin, "POST", "/students/import", { rows: [{ line: 1, firstName: "Gina", lastName: "Gómez", course: "6ES", house: "earth", gender: "m" }] });
+    expect(imp.body).toMatchObject({ created: 0, updated: 0, ambiguous: 1 });
+    // Si repite, un admin lo vuelve a su curso y se le puede cargar.
+    expect((await call(admin, "PATCH", `/students/${g}`, { course: "6ES" })).status).toBe(200);
+    expect((await save(profe, vel, today, [{ studentId: g, value: 6.9 }])).status).toBe(201);
+    expect((await call(admin, "POST", "/students", { firstName: "X", lastName: "Y", course: "GRAD", house: "earth", gender: "m" })).status).toBe(400);
+  });
+
+  it("una marca de antes del paso queda con el curso de entonces, aunque llegue después", async () => {
+    const admin = await newUser("Admin Uno", "admin");
+    const vel = await disciplineId("Velocidad 50 m");
+    const [g, s] = [await newStudent(admin, "Gina", "Gómez", "6ES"), await newStudent(admin, "Sol", "Sosa", "5ES")];
+    await call(admin, "POST", "/admin/promotion");
+    expect((await save(admin, vel, "2026-04-01", [{ studentId: g, value: 7 }, { studentId: s, value: 8 }])).status).toBe(201);
+    expect((await save(admin, vel, today, [{ studentId: s, value: 7.9 }])).status).toBe(201);
+    const marks = (await call(admin, "GET", "/marks?limit=50")).body.marks;
+    const at = (v: number) => marks.find((m: any) => m.value === v).courseAt;
+    expect([at(7), at(8), at(7.9)]).toEqual(["6ES", "5ES", "6ES"]);
+  });
+
+  it("se puede deshacer, sin tocar a quien le cambiaron el curso a mano", async () => {
+    const admin = await newUser("Admin Uno", "admin");
+    const vel = await disciplineId("Velocidad 50 m");
+    const [a, b] = [await newStudent(admin, "Juan", "Pérez", "5ES"), await newStudent(admin, "Juan", "Pérez", "6ES")];
+    const [c, d] = [await newStudent(admin, "Ceci", "Castro", "6EP"), await newStudent(admin, "Dani", "Díaz", "1EP")];
+    await call(admin, "POST", "/admin/promotion");
+    await call(admin, "PATCH", `/students/${c}`, { course: "4EP" });
+    await save(admin, vel, today, [{ studentId: d, value: 9 }]);
+    const { last } = (await call(admin, "GET", "/admin/promotion")).body;
+
+    expect((await call(admin, "POST", `/admin/promotion/${randomUUID()}/undo`)).status).toBe(409);
+    // Si ya entró otro con el mismo nombre al curso al que tendría que volver, avisa y no cambia nada.
+    const dup = await newStudent(admin, "Dani", "Díaz", "1EP");
+    expect((await call(admin, "POST", `/admin/promotion/${last.id}/undo`)).status).toBe(409);
+    expect(await courseOf(admin, b)).toBe("GRAD");
+    await call(admin, "PATCH", `/students/${dup}`, { active: false });
+
+    expect((await call(admin, "POST", `/admin/promotion/${last.id}/undo`)).body).toEqual({ restored: 3, skipped: 1 });
+    expect(await Promise.all([a, b, c, d].map((id) => courseOf(admin, id)))).toEqual(["5ES", "6ES", "4EP", "1EP"]);
+    expect((await call(admin, "GET", "/marks")).body.marks[0].courseAt).toBe("1EP");
+    expect((await call(admin, "POST", `/admin/promotion/${last.id}/undo`)).status).toBe(409);
+    // Deshecho, se puede volver a hacer.
+    expect((await call(admin, "GET", "/admin/promotion")).body).toMatchObject({ ready: true, last: null });
+    expect((await call(admin, "POST", "/admin/promotion")).status).toBe(201);
+
+    // Pasados 30 días ya no se deshace.
+    await age(40);
+    const now = (await call(admin, "GET", "/admin/promotion")).body.last;
+    expect((await call(admin, "POST", `/admin/promotion/${now.id}/undo`)).status).toBe(409);
+  });
+
+  it("dos pedidos a la vez suben un solo curso", async () => {
+    const admin = await newUser("Admin Uno", "admin");
+    const a = await newStudent(admin, "Ana", "Aguirre", "2EP");
+    const res = await Promise.all([1, 2, 3].map(() => call({ ...admin }, "POST", "/admin/promotion")));
+    expect(res.map((r) => r.status).sort()).toEqual([201, 409, 409]);
+    expect(await courseOf(admin, a)).toBe("3EP");
   });
 });
 

@@ -12,6 +12,7 @@ import { ddmm, ddmmyyyy, plural } from "../lib/format";
 import { refreshData, useApi, useDisciplines, useMe } from "../lib/hooks";
 import { isOfflineError, useOnline } from "../lib/offline";
 import { isAdmin } from "@shared/domain/roles";
+import { isGrad } from "@shared/domain/school";
 
 function GoalCard({ studentId, d, best, first, goal, canEdit }: { studentId: string; d: DisciplineDef & { id: string }; best: number | null; first: number | null; goal: number | null; canEdit: boolean }) {
   const [editing, setEditing] = useState(false);
@@ -141,11 +142,11 @@ export function Perfil() {
             <h1>{fullName(known)}</h1>
             <StudentFacts s={known} label />
           </div>
-          <Link className="btn pri with-icon" to={`/registros/nuevo?mode=one&step=3&student=${known.id}${list[0] ? `&d=${list[0].id}` : ""}`}><Icon name="plus" />Nueva marca</Link>
+          {!isGrad(known) && <Link className="btn pri with-icon" to={`/registros/nuevo?mode=one&step=3&student=${known.id}${list[0] ? `&d=${list[0].id}` : ""}`}><Icon name="plus" />Nueva marca</Link>}
         </div>
         <div className="card">
           <h2>Sin conexión</h2>
-          <p className="sub">El historial de {known.firstName} todavía no está guardado en este dispositivo: se va a ver cuando vuelva la señal. Igual podés cargarle una marca.</p>
+          <p className="sub">El historial de {known.firstName} todavía no está guardado en este dispositivo: se va a ver cuando vuelva la señal.{!isGrad(known) && " Igual podés cargarle una marca."}</p>
         </div>
       </>
     );
@@ -196,7 +197,7 @@ export function Perfil() {
           <h1>{fullName(s)}</h1>
           <StudentFacts s={s} label />
         </div>
-        <Link className="btn pri with-icon" to={`/registros/nuevo?mode=one&step=3&student=${s.id}&d=${d.id}`}><Icon name="plus" />Nueva marca</Link>
+        {!isGrad(s) && <Link className="btn pri with-icon" to={`/registros/nuevo?mode=one&step=3&student=${s.id}&d=${d.id}`}><Icon name="plus" />Nueva marca</Link>}
       </div>
 
       <div className="pills" role="group" aria-label="Disciplina">
@@ -228,7 +229,7 @@ export function Perfil() {
         </div>
         <div className="stack">
           {d.heights && (pd.jumps?.length ?? 0) > 0 && <JumpClasses d={d} jumps={pd.jumps} />}
-          <GoalCard key={`${s.id}${d.id}`} studentId={s.id} d={d} best={best?.value ?? null} first={first?.value ?? null} goal={pd.goal} canEdit={!!me && isAdmin(me.role)} />
+          <GoalCard key={`${s.id}${d.id}`} studentId={s.id} d={d} best={best?.value ?? null} first={first?.value ?? null} goal={pd.goal} canEdit={!!me && isAdmin(me.role) && !isGrad(s)} />
           <div className="card">
             <h2>Historial</h2>
             {newestFirst.length === 0 && <p className="muted">Sin marcas todavía.</p>}

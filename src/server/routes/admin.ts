@@ -10,6 +10,7 @@ import { hashPassword, tempPassword } from "../lib/crypto";
 import { badRequest, conflict, notFound, readJson } from "../lib/errors";
 import { audit } from "../services/audit";
 import { toDiscipline } from "../services/marks";
+import { promoteAll, promotionStatus, undoPromotion } from "../services/promotion";
 import type { AppEnv } from "../types";
 
 const toRow = (u: typeof users.$inferSelect): UserRow => ({
@@ -41,6 +42,8 @@ export const adminRoutes = new Hono<AppEnv>()
   .use("/users/*", requireSuper)
   .use("/disciplines", requireAdmin)
   .use("/disciplines/*", requireAdmin)
+  .use("/promotion", requireAdmin)
+  .use("/promotion/*", requireAdmin)
   .get("/users", async (c) => {
     const rows = await db.select().from(users).orderBy(asc(users.lastName), asc(users.firstName));
     return c.json(rows.map(toRow));
@@ -117,4 +120,17 @@ export const adminRoutes = new Hono<AppEnv>()
     });
     await audit(currentUser(c).id, "discipline_updated", id, { fields: Object.keys(body) });
     return c.json(toDiscipline(row));
+  })
+  .get("/promotion", async (c) => c.json(await promotionStatus()))
+  .post("/promotion", async (c) => {
+    const user = currentUser(c);
+    const { id, ...done } = await promoteAll(user);
+    await audit(user.id, "year_promoted", id, done);
+    return c.json(done, 201);
+  })
+  .post("/promotion/:id/undo", async (c) => {
+    const id = c.req.param("id");
+    const result = await undoPromotion(id);
+    await audit(currentUser(c).id, "year_promotion_undone", id, result);
+    return c.json(result);
   });

@@ -2,7 +2,7 @@ import { QueryCache, QueryClient, useQuery } from "@tanstack/react-query";
 import type { Discipline, Me } from "@shared/contracts";
 import { ApiError, api } from "./api";
 
-const ME = "/api/auth/me";
+export const ME = "/api/auth/me";
 
 export const queryClient: QueryClient = new QueryClient({
   queryCache: new QueryCache({

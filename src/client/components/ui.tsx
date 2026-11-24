@@ -1,6 +1,6 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import type { Discipline, Student } from "@shared/contracts";
-import { COURSES, GENDER_NAMES, GENDER_ONE, HOUSES, HOUSE_NAMES, LEVELS, courseLabel, type House } from "@shared/domain/school";
+import { COURSES, GENDER_NAMES, GENDER_ONE, GRAD, HOUSES, HOUSE_NAMES, LEVELS, courseLabel, isGrad, type House } from "@shared/domain/school";
 import { initials } from "@shared/domain/names";
 import { unitName } from "@shared/domain/marks";
 import { useOnline } from "../lib/offline";
@@ -53,7 +53,7 @@ export function HouseChip({ house, big }: { house: string; big?: boolean }) {
 export function StudentFacts({ s, label = false }: { s: Student; label?: boolean }) {
   return (
     <div className="facts">
-      <span className="chip num">{label ? `Curso ${courseLabel(s.course)}` : courseLabel(s.course)}</span>
+      <span className="chip num">{label && !isGrad(s) ? `Curso ${courseLabel(s.course)}` : courseLabel(s.course)}</span>
       <HouseChip house={s.house} big />
       <span className={`chip${s.gender ? "" : " undefined-gender"}`}>{s.gender ? GENDER_ONE[s.gender] : "Sexo sin definir"}</span>
     </div>
@@ -110,7 +110,7 @@ export function Pick({ id, label, value, onChange, children }: { id: string; lab
     </div>
   );
 }
-export function CourseOptions({ all }: { all?: string }) {
+export function CourseOptions({ all, grad }: { all?: string; grad?: boolean }) {
   return (
     <>
       {all && <option value="">{all}</option>}
@@ -119,6 +119,7 @@ export function CourseOptions({ all }: { all?: string }) {
           {COURSES.filter((c) => c.endsWith(l.key)).map((c) => <option key={c} value={c}>{courseLabel(c)}</option>)}
         </optgroup>
       ))}
+      {grad && <option value={GRAD}>{courseLabel(GRAD)}</option>}
     </>
   );
 }

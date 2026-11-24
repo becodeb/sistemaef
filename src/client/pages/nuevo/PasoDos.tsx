@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Me, Student } from "@shared/contracts";
-import { COURSES, GENDER_NAMES, HOUSES, LEVELS, courseLabel, groupByKey, groupKeyOf, todayAR } from "@shared/domain/school";
+import { COURSES, GENDER_NAMES, HOUSES, LEVELS, courseLabel, groupByKey, groupKeyOf, isGrad, todayAR } from "@shared/domain/school";
 import { fullName, matchesName } from "@shared/domain/names";
 import { fmtMark, parseEntry } from "@shared/domain/marks";
 import { currentHeight } from "@shared/domain/heights";
@@ -26,7 +26,8 @@ function ModeSeg({ wiz, update }: Pick<Props, "wiz" | "update">) {
 }
 
 function StudentPicker({ wiz, update }: Pick<Props, "wiz" | "update">) {
-  const { data: students, isLoading } = useApi<Student[]>("/api/students");
+  const { data: all, isLoading } = useApi<Student[]>("/api/students");
+  const students = useMemo(() => all?.filter((s) => !isGrad(s)), [all]);
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const [hi, setHi] = useState(0);

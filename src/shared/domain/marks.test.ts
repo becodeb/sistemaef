@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { cleanRaw, fmtMark, fmtSigned, parseEntry, personalBests, type DisciplineDef } from "./marks";
 import { parseCourse, parseRoster } from "./roster-import";
 import { nameKey } from "./names";
-import { COURSES, GROUPS, courseLabel, courseName, groupByKey, groupKeyOf, todayAR } from "./school";
+import { COURSES, GRAD, GROUPS, PROMOTION, courseLabel, courseName, groupByKey, groupKeyOf, todayAR } from "./school";
 
 const alto: DisciplineDef = { name: "Salto en alto", what: "Altura", kind: "dec", unit: "m", better: "hi", decimals: 2, lo: 0.6, hi: 2.3, example: "1,35", hint: null };
 const res: DisciplineDef = { name: "Resistencia 1000 m", what: "Tiempo", kind: "ms", unit: "min", better: "lo", decimals: 0, lo: 150, hi: 900, example: "4:35", hint: null };
@@ -108,6 +108,14 @@ describe("colegio", () => {
   it("nombra los cursos", () => {
     expect(courseLabel("6ES")).toBe("6.º ES");
     expect(courseName("3EP")).toBe("3.º año de primaria");
+  });
+  it("al pasar de año cada curso sube uno y 6.º de secundaria egresa", () => {
+    const to = (from: string) => PROMOTION.find((p) => p.from === from)!.to;
+    expect([to("1EP"), to("5EP"), to("6EP"), to("1ES"), to("6ES")]).toEqual(["2EP", "6EP", "1ES", "2ES", GRAD]);
+    expect(new Set(PROMOTION.map((p) => p.to)).size).toBe(12);
+    expect(courseLabel(GRAD)).toBe("GRAD TEAM");
+    // No se cargan marcas a GRAD TEAM como grupo.
+    expect(groupByKey(`c:${GRAD}`)).toBeUndefined();
   });
   it("usa la fecha de Argentina", () => {
     expect(todayAR(new Date("2026-11-07T01:30:00Z"))).toBe("2026-11-06");

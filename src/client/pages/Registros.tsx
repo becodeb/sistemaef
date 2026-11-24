@@ -1,16 +1,18 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import type { RecentPage } from "@shared/contracts";
+import { MAX_DELETE, type RecentPage } from "@shared/contracts";
 import { fmtMark, parseEntry } from "@shared/domain/marks";
 import { courseLabel, groupByKey, GENDER_NAMES, todayAR } from "@shared/domain/school";
+import { isAdmin } from "@shared/domain/roles";
 import { fullName } from "@shared/domain/names";
-import { Avatar, CourseOptions, DisciplinePick, Empty, ErrorBox, GenderSeg, HouseChip, HouseOptions, Icon, Loading, PageHead, Pick } from "../components/ui";
-import { withQuery } from "../lib/api";
+import { toast } from "sonner";
+import { Avatar, Confirm, CourseOptions, DisciplinePick, Empty, ErrorBox, GenderSeg, HouseChip, HouseOptions, Icon, Loading, PageHead, Pick } from "../components/ui";
+import { api, withQuery } from "../lib/api";
 import { listDrafts } from "../lib/drafts";
 import { listJumps } from "../lib/jumps";
 import { currentHeight, queueOf } from "@shared/domain/heights";
-import { ddmm } from "../lib/format";
-import { useApi, useDisciplines, useMe } from "../lib/hooks";
+import { ddmm, plural } from "../lib/format";
+import { refreshData, useApi, useDisciplines, useMe } from "../lib/hooks";
 
 const PAGE = 15;
 
@@ -73,11 +75,63 @@ export function Registros() {
   const [house, setHouse] = useState("");
   const [gender, setGender] = useState("");
   const [page, setPage] = useState(0);
-  const { data, isLoading, error, refetch } = useApi<RecentPage>(withQuery("/api/marks", { disciplineId, course, house, gender, limit: PAGE, offset: page * PAGE }));
+  const filter = { disciplineId, course, house, gender };
+  const { data, isLoading, error, refetch } = useApi<RecentPage>(withQuery("/api/marks", { ...filter, limit: PAGE, offset: page * PAGE }));
   const reset = <T,>(set: (v: T) => void) => (v: T) => {
     set(v);
     setPage(0);
+    // Con otro filtro quedarían elegidos registros que ya no se ven.
+    setSel(new Set());
   };
+
+  // Borrado de varios, solo admins. Lo elegido se mantiene al pasar de página.
+  const { data: me } = useMe();
+  const canDelete = !!me && isAdmin(me.role);
+  const [sel, setSel] = useState<Set<string>>(new Set());
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const total = data?.total ?? 0;
+  const pageIds = data?.marks.map((m) => m.id) ?? [];
+  const onPage = pageIds.filter((id) => sel.has(id)).length;
+  const allOnPage = pageIds.length > 0 && onPage === pageIds.length;
+  const toggle = (ids: string[], on: boolean) =>
+    setSel((cur) => {
+      const next = new Set(cur);
+      for (const id of ids) {
+        if (on) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  const selectAll = async () => {
+    setBusy(true);
+    try {
+      const { ids } = await api.get<{ ids: string[] }>(withQuery("/api/marks/ids", filter));
+      setSel(new Set(ids));
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const remove = async () => {
+    setBusy(true);
+    try {
+      const { deleted } = await api.post<{ deleted: number }>("/api/marks/delete", { ids: [...sel] });
+      toast.success(deleted === 1 ? "Registro borrado" : `${deleted} registros borrados`);
+      setSel(new Set());
+      setConfirming(false);
+      void refreshData();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  // Si se borró la última página, vuelve a la última que queda.
+  useEffect(() => {
+    if (data && page > 0 && page * PAGE >= data.total) setPage(Math.max(0, Math.ceil(data.total / PAGE) - 1));
+  }, [data, page]);
 
   return (
     <>
@@ -99,7 +153,7 @@ export function Registros() {
       <SavedDrafts />
       <div className="card">
         <h2>Últimos registros</h2>
-        <p className="sub">Tocá un nombre para ver el perfil con todas sus marcas.</p>
+        <p className="sub">Tocá un nombre para ver el perfil con todas sus marcas.{canDelete && " Para borrar, tildá los registros."}</p>
         <div className="filters">
           <Pick id="f-disc" label="Disciplina" value={disciplineId} onChange={reset(setDisciplineId)}>
             <option value="">Todas</option>
@@ -116,12 +170,38 @@ export function Registros() {
           <>
             <div className="tbl-wrap">
               <table>
-                <thead><tr><th>Alumno</th><th>Curso</th><th>House</th><th>Disciplina</th><th>Marca</th><th>Fecha</th><th>Cargó</th><th /></tr></thead>
+                <thead>
+                  <tr>
+                    {canDelete && (
+                      <th className="c-sel">
+                        <label>
+                          <input
+                            type="checkbox"
+                            aria-label="Elegir todos los de esta página"
+                            checked={allOnPage}
+                            ref={(el) => {
+                              if (el) el.indeterminate = onPage > 0 && !allOnPage;
+                            }}
+                            onChange={(e) => toggle(pageIds, e.target.checked)}
+                          />
+                        </label>
+                      </th>
+                    )}
+                    <th>Alumno</th><th>Curso</th><th>House</th><th>Disciplina</th><th>Marca</th><th>Fecha</th><th>Cargó</th><th />
+                  </tr>
+                </thead>
                 <tbody>
                   {data.marks.map((m) => {
                     const d = byId(m.disciplineId);
                     return (
-                      <tr key={m.id}>
+                      <tr key={m.id} className={sel.has(m.id) ? "row-sel" : undefined}>
+                        {canDelete && (
+                          <td className="c-sel">
+                            <label>
+                              <input type="checkbox" aria-label={`Elegir el registro de ${fullName(m.student)} del ${ddmm(m.takenOn)}`} checked={sel.has(m.id)} onChange={(e) => toggle([m.id], e.target.checked)} />
+                            </label>
+                          </td>
+                        )}
                         <td><Link className="who name-btn" to={`/estudiantes/${m.studentId}?d=${m.disciplineId}`}><Avatar p={m.student} />{fullName(m.student)}</Link></td>
                         <td className="num nowrap">{courseLabel(m.courseAt)}</td>
                         <td><HouseChip house={m.student.house} /></td>
@@ -136,6 +216,16 @@ export function Registros() {
                 </tbody>
               </table>
             </div>
+            {sel.size > 0 && (
+              <div className="sel-bar" role="region" aria-label="Registros elegidos">
+                <b className="num" role="status">{plural(sel.size, "elegido", "elegidos")}</b>
+                <button className="link" type="button" onClick={() => setSel(new Set())}>Quitar selección</button>
+                {allOnPage && sel.size < Math.min(total, MAX_DELETE) && (
+                  <button className="btn" type="button" disabled={busy} onClick={() => void selectAll()}>{total > MAX_DELETE ? `Elegir los últimos ${MAX_DELETE}` : `Elegir los ${total}`}</button>
+                )}
+                <button className="btn danger" type="button" disabled={busy || sel.size > MAX_DELETE} onClick={() => setConfirming(true)}>Borrar</button>
+              </div>
+            )}
             <div className="pager">
               <span className="muted num">{page * PAGE + 1}–{Math.min((page + 1) * PAGE, data.total)} de {data.total}</span>
               <button className="btn" type="button" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>Anteriores</button>
@@ -144,6 +234,9 @@ export function Registros() {
           </>
         )}
       </div>
+      <Confirm open={confirming} title={sel.size === 1 ? "¿Borrar este registro?" : `¿Borrar ${sel.size} registros?`} action={sel.size === 1 ? "Borrar" : `Borrar ${sel.size}`} danger busy={busy} onCancel={() => setConfirming(false)} onConfirm={() => void remove()}>
+        <p>Se borran las marcas elegidas de los perfiles y se recalculan las marcas personales. No se puede deshacer.</p>
+      </Confirm>
     </>
   );
 }

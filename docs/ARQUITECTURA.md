@@ -51,10 +51,17 @@ tiene usuarios. Tiene que quedar siempre al menos un admin general con acceso.
 ## Reglas del dominio
 
 - **Curso** = año + nivel, sin división: `6ES`, `3EP` (`shared/domain/school.ts`). K5 no está incluido. **Equipos** = houses: Earth, Wind, Water.
+- **Paso de año** (admins, en Administración → Alumnos; `services/promotion.ts`): los activos suben un curso y 6.º ES pasa a
+  `GRAD` («GRAD TEAM»). Se puede hacer una vez cada 180 días y deshacer durante 30; `promotions` guarda de dónde a dónde fue
+  cada uno. Una marca con fecha anterior al paso (cargada tarde o enviada tarde por un teléfono) queda con el curso de
+  entonces (`coursesOn`). `GRAD` no está en `COURSES`: no es un grupo para cargar ni cuenta como alumno del año, y el
+  servidor rechaza sus marcas nuevas; sus récords siguen en rankings y en su perfil. La lista importada nunca lo toca.
 - **Sexo**: `m` (mujer), `h` (hombre) o `null`. Quien tiene `null` aparece en «Todos» pero no en las listas separadas.
 - **Marcas**: un alumno puede tener todas las que se quieran. `value` null es ausente; los tiempos largos van en segundos.
 - `courseAt` guarda el curso del alumno al tomar la marca: pasar de año o cambiar de curso no altera los rankings viejos.
 - `isPb` y `pbDelta` (marca personal) se **recalculan desde el historial** al guardar y al borrar, porque se puede cargar una fecha vieja.
+- **Borrado** (solo admins): uno desde el perfil o varios tildándolos en Registros (`POST /api/marks/delete`, hasta 1000 ids).
+  El cliente manda siempre los ids que se ven elegidos, nunca «todo lo que cumpla el filtro». Queda en `audit_logs` qué se borró.
 - `batchId` identifica cada envío y es único con el alumno: si el teléfono reintenta por mala señal, no se duplica nada.
 - La planilla sin guardar vive en `localStorage` (`client/lib/drafts.ts`), por dispositivo y usuario: la cancha puede no tener señal.
 - **Salto en alto por alturas** (disciplinas con `heights`, solo en metros y «más es mejor»): en carga grupal el profe fija

@@ -1,6 +1,6 @@
 // Cuerpos de los pedidos a la API (zod) y tipos de las respuestas; los usan el servidor y el cliente.
 import { z } from "zod";
-import { COURSES, GENDERS, HOUSES } from "./domain/school";
+import { COURSES, GENDERS, GRAD, HOUSES } from "./domain/school";
 import { ROLES, type Role } from "./domain/roles";
 import type { DisciplineDef } from "./domain/marks";
 import { JUMP_RESULTS, type JumpResult } from "./domain/heights";
@@ -30,7 +30,7 @@ export const createUserBody = z.object({
 export const updateUserBody = z.object({ active: z.boolean().optional(), role: z.enum(ROLES).optional() });
 
 export const studentBody = z.object({ firstName: name, lastName: name, course, house, gender: gender.default(null) });
-export const updateStudentBody = z.object({ firstName: name, lastName: name, course, house, gender, active: z.boolean() }).partial();
+export const updateStudentBody = z.object({ firstName: name, lastName: name, course: course.or(z.literal(GRAD)), house, gender, active: z.boolean() }).partial();
 export const importBody = z.object({
   dryRun: z.boolean().default(false),
   rows: z
@@ -50,6 +50,11 @@ export const saveMarksBody = z.object({
     .max(20000)
     .optional(),
 }).refine((b) => b.entries.length > 0 || (b.attempts?.length ?? 0) > 0, { message: "No hay marcas para guardar.", path: ["entries"] });
+/** Tope de registros por borrado: lo que entra en una selección. */
+export const MAX_DELETE = 1000;
+export const deleteMarksBody = z.object({
+  ids: z.array(z.uuid()).min(1, "Elegí al menos un registro.").max(MAX_DELETE, `Se pueden borrar hasta ${MAX_DELETE} registros a la vez.`),
+});
 export const goalBody = z.object({ target: z.number().positive("La meta tiene que ser mayor que cero.").nullable() });
 
 export const disciplineBody = z.object({
@@ -81,6 +86,15 @@ export type Best = { value: number; takenOn: string };
 export type RosterStudent = Student & { best: Best | null };
 /** `courseBest`: la mejor marca de cada curso en esta disciplina. */
 export type Roster = { students: RosterStudent[]; courseBest: Record<string, number> };
+
+/** `ready`: ya pasó el tiempo mínimo desde el último paso. */
+export type PromotionStatus = {
+  steps: { from: string; to: string; students: number }[];
+  graduates: number;
+  ready: boolean;
+  last: { id: string; on: string; byName: string; moved: number; graduated: number; canUndo: boolean } | null;
+};
+export type PromotionDone = { moved: number; graduated: number };
 
 export type MarkRow = {
   id: string;
